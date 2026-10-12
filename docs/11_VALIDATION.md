@@ -259,3 +259,4 @@ NDK 29.0.14206865 / CMake 3.22.1 / Clang 21.0.0 从固定 sherpa 提交完成 AR
 - 版本 0.1.0-prealpha.3 / versionCode 3。Release、DebugAndroidTest、lintRelease 构建通过，1m51s；lint 0 errors / 13 warnings。功能测试沿用本次改动的 154 项主机与六向真实模型模拟器结果。
 - 签名 APK `RC-LocalLiveTranslate-0.1.0-prealpha.3-arm64.apk`：78,918,270 bytes。apksigner 验证通过，与前两版证书一致；ELF / ZIP 16 KB 对齐、必需 JNI / 原生来源 / 无 TTS 检查通过。权重、签名材料、录音与私密日志不提交或发布。
 - 使用隔离 userdata 的最小 API35 模拟器先安装签名 prealpha.2，再以 `install -r` 覆盖安装签名 prealpha.3，均成功；实际启动界面与 versionCode 3 / versionName 已核对，crash buffer 为空。截图 `.tools/emulator-validation/35-prealpha3-release-startup.png`。未执行真实手机升级或带已有模型/历史的大数据升级。
+- 已推送实现提交 `4064299` 与标签 `v0.1.0-prealpha.3`，公开 [GitHub Pre-release](https://github.com/JDui/RC-LocalLiveTranslate/releases/tag/v0.1.0-prealpha.3)；附件名称 / 大小与本地发行包一致。发布时远程 CI run `38243758027` 仍处于原生构建，未声称远程检查通过。

@@ -1,5 +1,7 @@
 # 0.1.0-prealpha.3
 
+2026-10-12 已公开为 GitHub Pre-release，发行标签 `v0.1.0-prealpha.3` 指向实现提交 `4064299`。签名 APK 已上传。本地验证通过；发布时 [远程 CI](https://github.com/JDui/RC-LocalLiveTranslate/actions/runs/38243758027) 仍在运行，不能视为已通过。
+
 ## 改动
 
 - 翻译后端替换为 Hy-MT2-1.8B 1.25-bit STQ1_0，移除 Foxlet 运行依赖。
