@@ -38,6 +38,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     val notice = mutableNotice.asStateFlow()
     private var demoJob: Job? = null
     private var reducer = SubtitleReducer("")
+    private var demoMode = TranslationMode.TO_ZH
     private var demoStep = 0
     init { viewModelScope.launch { app.models.refresh() } }
 
@@ -48,7 +49,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun startDemo() {
         if (!mutableLive.value.demo || mutableLive.value.running || recording.value.phase == RecordingPhase.RECORDING) return
         if (!mutableLive.value.paused) {
-            val id = UUID.randomUUID().toString(); reducer = SubtitleReducer(id); demoStep = 0
+            demoMode = settings.value.translationMode
+            val id = UUID.randomUUID().toString(); reducer = SubtitleReducer(id, demoMode); demoStep = 0
             mutableLive.value = LiveState(id, demo = true, createdAt = System.currentTimeMillis())
         }
         mutableLive.update { it.copy(running = true, paused = false) }
@@ -67,7 +69,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     1 -> SubtitleEvent.Transcript(state.sessionId, segment, 1, start, start + 56_000,
                         sample.language, sample.source, CaptionStage.FINAL)
                     2 -> SubtitleEvent.Speaker(state.sessionId, segment, 1, sample.speaker)
-                    else -> SubtitleEvent.Translation(state.sessionId, segment, 1, sample.target)
+                    else -> SubtitleEvent.Translation(state.sessionId, segment, 1, sample.translated(demoMode.target(sample.language)))
                 }
                 mutableLive.update { it.copy(captions = reducer.apply(event), elapsedSeconds = (demoStep + 1) * 650L / 1000) }
                 demoStep++
@@ -130,14 +132,22 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 .onFailure { mutableNotice.value = "诊断导出失败，请检查目标文件。" }
         }
     }
-    private data class DemoSample(val language: SourceLanguage, val source: String, val target: String, val speaker: String)
+    private data class DemoSample(val language: SourceLanguage, val source: String, val target: String, val speaker: String,
+        val english: String = source, val japanese: String = source) {
+        fun translated(language: SourceLanguage?) = when (language) {
+            SourceLanguage.ZH -> target
+            SourceLanguage.EN -> english
+            SourceLanguage.JA -> japanese
+            else -> ""
+        }
+    }
     private val demoSamples = listOf(
-        DemoSample(SourceLanguage.EN, "Shall we take a walk by the river after the meeting?", "会议结束后，我们去河边走走好吗？", "A"),
-        DemoSample(SourceLanguage.JA, "いいですね。夕方は少し涼しくなりそうです。", "好呀，傍晚应该会凉快一些。", "B"),
-        DemoSample(SourceLanguage.ZH, "那我们六点在楼下见，顺便一起吃晚饭。", "", "A"),
-        DemoSample(SourceLanguage.EN, "Perfect. I know a quiet place just around the corner.", "太好了。拐角附近有一家安静的小店。", "B"),
-        DemoSample(SourceLanguage.JA, "予約は必要ですか？", "需要预约吗？", "A"),
-        DemoSample(SourceLanguage.ZH, "我先打电话问一下，稍后告诉你。", "", "B"),
-        DemoSample(SourceLanguage.EN, "Thank you. See you downstairs at six.", "谢谢，六点楼下见。", "A"),
+        DemoSample(SourceLanguage.EN, "Shall we take a walk by the river after the meeting?", "会议结束后，我们去河边走走好吗？", "A", japanese = "会議の後、川沿いを散歩しませんか？"),
+        DemoSample(SourceLanguage.JA, "いいですね。夕方は少し涼しくなりそうです。", "好呀，傍晚应该会凉快一些。", "B", english = "Sounds good. It should be cooler this evening."),
+        DemoSample(SourceLanguage.ZH, "那我们六点在楼下见，顺便一起吃晚饭。", "", "A", "Then let us meet downstairs at six and have dinner together.", "それでは六時に下で会って、一緒に夕食を食べましょう。"),
+        DemoSample(SourceLanguage.EN, "Perfect. I know a quiet place just around the corner.", "太好了。拐角附近有一家安静的小店。", "B", japanese = "いいですね。角を曲がった所に静かなお店があります。"),
+        DemoSample(SourceLanguage.JA, "予約は必要ですか？", "需要预约吗？", "A", english = "Do we need a reservation?"),
+        DemoSample(SourceLanguage.ZH, "我先打电话问一下，稍后告诉你。", "", "B", "I will call and ask, then let you know.", "電話で確認して、後でお知らせします。"),
+        DemoSample(SourceLanguage.EN, "Thank you. See you downstairs at six.", "谢谢，六点楼下见。", "A", japanese = "ありがとう。六時に下で会いましょう。"),
     )
 }

@@ -52,6 +52,19 @@ import java.io.File
 class ComposeUiTest {
     @get:Rule(order = 0) val windowLayout = WindowLayoutInfoPublisherRule()
     @get:Rule(order = 1) val compose = createAndroidComposeRule<ComponentActivity>()
+    @Test fun pairSelectorChangesSettingAndChineseTranslationIsVisible() {
+        val settings = mutableStateOf(UserSettings())
+        compose.setContent {
+            GlassTheme(settings.value) {
+                LiveScreen(LiveState(), RecordingState(), settings.value, 0, {}, {}, {}, {}, {}, {}, {},
+                    changeMode = { settings.value = settings.value.copy(translationMode = it) })
+            }
+        }
+        compose.onNodeWithText("语言：译中文").performClick()
+        compose.onNodeWithText("中日").performClick()
+        compose.onNodeWithText("语言：中日").assertExists()
+        compose.runOnIdle { assertEquals(TranslationMode.ZH_JA, settings.value.translationMode) }
+    }
     private val captions = listOf(
         SubtitleItem("demo", "1", 0, 56_000, 1, SourceLanguage.EN,
             "Shall we take a walk by the river after the meeting?", "会议结束后，我们去河边走走好吗？", "A", CaptionStage.FINAL, TranslationStatus.COMPLETE),
@@ -204,12 +217,12 @@ class ComposeUiTest {
         compose.onNodeWithText("开源许可").performScrollTo().performClick()
         compose.waitUntil(5000) {
             shadowOf(Looper.getMainLooper()).idle()
-            compose.onAllNodesWithText("foxlet/SOURCE.txt").fetchSemanticsNodes().isNotEmpty()
+            compose.onAllNodesWithText("hymt/SOURCE.txt").fetchSemanticsNodes().isNotEmpty()
         }
-        compose.onNodeWithText("foxlet/SOURCE.txt").performClick()
+        compose.onNodeWithText("hymt/SOURCE.txt").performClick()
         compose.waitUntil(5000) {
             shadowOf(Looper.getMainLooper()).idle()
-            compose.onAllNodes(hasText("github.com/yinvoke/foxlet-translate", substring = true)).fetchSemanticsNodes().isNotEmpty()
+            compose.onAllNodes(hasText("github.com/ggml-org/llama.cpp", substring = true)).fetchSemanticsNodes().isNotEmpty()
         }
         compose.onNodeWithText("返回").performClick()
         compose.onNodeWithText("关闭").performClick()
@@ -219,7 +232,7 @@ class ComposeUiTest {
         val version = app.packageManager.getPackageInfo(app.packageName, 0).versionName.orEmpty()
         assertTrue(version.isNotBlank())
         render("settings-installed-version", Page.SETTINGS)
-        compose.onNodeWithText("$version · Android Native").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(version).performScrollTo().assertIsDisplayed()
     }
     @Test @Config(qualifiers = "w900dp-h900dp-mdpi") fun performanceControlsAndDiagnosticsStayInFoldPane() {
         val settings = mutableStateOf(UserSettings(keepSessions = false))
@@ -288,9 +301,9 @@ class ComposeUiTest {
     @Test @Config(qualifiers = "w900dp-h900dp-mdpi") fun bookModelsShowSpeechAndTranslationInSeparatePanes() {
         render("models-book-expanded", Page.MODELS, folds = listOf(WindowFold(IntRect(440, 0, 460, 900), FoldAxis.VERTICAL, true, true)))
         compose.onNodeWithText("SenseVoice Small").assertIsDisplayed()
-        compose.onNodeWithText("English → 中文").assertIsDisplayed()
+        compose.onNodeWithText("Hy-MT2 1.8B · 1.25-bit").assertIsDisplayed()
         assertTrue(compose.onNodeWithText("SenseVoice Small").fetchSemanticsNode().boundsInRoot.right < 440)
-        assertTrue(compose.onNodeWithText("English → 中文").fetchSemanticsNode().boundsInRoot.left > 460)
+        assertTrue(compose.onNodeWithText("Hy-MT2 1.8B · 1.25-bit").fetchSemanticsNode().boundsInRoot.left > 460)
     }
     @Test @Config(qualifiers = "w900dp-h900dp-mdpi") fun flatLiveHasTranslationCompanionAndReachableControls() {
         render("live-expanded")
@@ -313,9 +326,9 @@ class ComposeUiTest {
         render("models-tabletop", Page.MODELS,
             folds = listOf(WindowFold(IntRect(0, 440, 900, 460), FoldAxis.HORIZONTAL, true, true)))
         compose.onNodeWithText("SenseVoice Small").assertIsDisplayed()
-        compose.onNodeWithText("English → 中文").assertIsDisplayed()
+        compose.onNodeWithText("Hy-MT2 1.8B · 1.25-bit").assertIsDisplayed()
         assertTrue(compose.onNodeWithText("SenseVoice Small").fetchSemanticsNode().boundsInRoot.bottom < 440)
-        assertTrue(compose.onNodeWithText("English → 中文").fetchSemanticsNode().boundsInRoot.top > 460)
+        assertTrue(compose.onNodeWithText("Hy-MT2 1.8B · 1.25-bit").fetchSemanticsNode().boundsInRoot.top > 460)
         compose.onNodeWithContentDescription("导入模型包").assertIsDisplayed()
         assertTrue(compose.onNodeWithContentDescription("导入模型包").fetchSemanticsNode().boundsInRoot.bottom < 440)
         compose.onNodeWithText("从本地导入").performScrollTo().assertIsDisplayed()

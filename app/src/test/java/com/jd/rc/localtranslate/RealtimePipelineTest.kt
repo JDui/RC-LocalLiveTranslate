@@ -53,7 +53,7 @@ class RealtimePipelineTest {
                 if (samples.first() < .15f) SourceLanguage.EN else SourceLanguage.JA)
         }
         override fun embedding(samples: FloatArray) = if (samples.first() < .15f) floatArrayOf(1f, 0f) else floatArrayOf(0f, 1f)
-        override suspend fun translate(text: String, language: SourceLanguage) = if (translationAvailable) "中文:$text" else null
+        override suspend fun translate(text: String, language: SourceLanguage, target: SourceLanguage) = if (translationAvailable) "中文:$text" else null
         override suspend fun close() { assertFalse(closed.getAndSet(true)) }
     }
     private suspend fun feed(pipeline: RealtimePipeline, from: Long, frames: Int, value: Short = 3277): Long {
@@ -63,6 +63,26 @@ class RealtimePipelineTest {
             offset += 512; delay(1)
         }
         return offset
+    }
+    @Test fun chineseJapanesePairPassesExplicitTargetAndSkipsEnglish() = runBlocking {
+        val backing = Engines()
+        val calls = mutableListOf<Pair<SourceLanguage, SourceLanguage>>()
+        val engines = object : SpeechEngines by backing {
+            override fun recognize(samples: FloatArray) = if (samples.first() < .15f)
+                RecognizedSpeech("早上好", SourceLanguage.ZH) else RecognizedSpeech("Good morning", SourceLanguage.EN)
+            override suspend fun translate(text: String, language: SourceLanguage, target: SourceLanguage): String {
+                calls += language to target; return "おはようございます。"
+            }
+        }
+        val store = ConversationStore().apply { begin("session", TranslationMode.ZH_JA) }
+        val pipeline = RealtimePipeline("session", engines, store, this)
+        val offset = feed(pipeline, 0, 40)
+        feed(pipeline, offset, 40, 6554)
+        pipeline.finish()
+        assertEquals(listOf(SourceLanguage.ZH to SourceLanguage.JA), calls)
+        assertEquals(SourceLanguage.JA, store.state.value.captions[0].targetLanguage)
+        assertEquals("おはようございます。", store.state.value.captions[0].targetText)
+        assertEquals(TranslationStatus.NOT_REQUIRED, store.state.value.captions[1].translationStatus)
     }
     @Test fun finalAsrTranslationAndSpeakerBackfillReachStore() = runBlocking {
         val engines = Engines(); val store = ConversationStore().apply { begin("session") }
@@ -163,7 +183,7 @@ class RealtimePipelineTest {
         val engines = object : SpeechEngines by backing {
             override fun recognize(samples: FloatArray) = backing.recognize(samples).also { asrCalls.incrementAndGet() }
             override fun embedding(samples: FloatArray): FloatArray? { optionalCalls.incrementAndGet(); return backing.embedding(samples) }
-            override suspend fun translate(text: String, language: SourceLanguage): String? { optionalCalls.incrementAndGet(); return backing.translate(text, language) }
+            override suspend fun translate(text: String, language: SourceLanguage, target: SourceLanguage): String? { optionalCalls.incrementAndGet(); return backing.translate(text, language, target) }
         }
         val runtime = MutableStateFlow(PerformancePolicyController().evaluate(PressureSnapshot(lowMemory = true), PerformanceMode.AUTO, 0))
         val store = ConversationStore().apply { begin("session") }
@@ -218,9 +238,9 @@ class RealtimePipelineTest {
         val active = AtomicBoolean(false); val releases = java.util.concurrent.atomic.AtomicInteger()
         val invalidRelease = AtomicBoolean(false); var calls = 0
         val engines = object : SpeechEngines by backing {
-            override suspend fun translate(text: String, language: SourceLanguage): String? {
+            override suspend fun translate(text: String, language: SourceLanguage, target: SourceLanguage): String? {
                 calls++; active.set(true); entered.complete(Unit)
-                try { if (calls == 1) unblock.await(); return backing.translate(text, language) }
+                try { if (calls == 1) unblock.await(); return backing.translate(text, language, target) }
                 finally { active.set(false) }
             }
             override suspend fun releaseTranslation() { if (active.get()) invalidRelease.set(true); releases.incrementAndGet() }

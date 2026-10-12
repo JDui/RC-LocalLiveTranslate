@@ -54,11 +54,11 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-internal enum class Page(val title: String, val subtitle: String, val icon: ImageVector) {
-    LIVE("即时字幕", "RC LOCAL LIVE TRANSLATE", Icons.Outlined.GraphicEq),
-    MODELS("离线模型", "ON-DEVICE INTELLIGENCE", Icons.Outlined.Memory),
-    SESSIONS("对话记录", "YOUR CONVERSATIONS", Icons.Outlined.History),
-    SETTINGS("设置", "MAKE IT YOURS", Icons.Outlined.Tune),
+internal enum class Page(val title: String, val icon: ImageVector) {
+    LIVE("即时字幕", Icons.Outlined.GraphicEq),
+    MODELS("离线模型", Icons.Outlined.Memory),
+    SESSIONS("对话记录", Icons.Outlined.History),
+    SETTINGS("设置", Icons.Outlined.Tune),
 }
 
 @Composable
@@ -92,7 +92,7 @@ fun TranslateApp(vm: AppViewModel) {
                             LiveScreen(live, recording, settings, models.installed.size, vm::setDemo,
                                 vm::startDemo, vm::pauseDemo, vm::stopDemo, vm::record,
                                 { vm.setSettings(SettingsChange(bilingual = !settings.bilingual)) },
-                                { nav.navigate(Page.MODELS.name) { launchSingleTop = true } }, processing)
+                                { nav.navigate(Page.MODELS.name) { launchSingleTop = true } }, processing, changeMode = { vm.setSettings(SettingsChange(translationMode = it)) })
                         }
                         composable(Page.MODELS.name) { ModelsScreen(models, vm::importModel, vm::deleteModel) }
                         composable(Page.SESSIONS.name) { SessionsScreen(sessions, settings, vm::renameSession, vm::deleteSession, vm::export) }
@@ -123,10 +123,9 @@ internal fun GlassNavigation(selected: Page, rail: Boolean, onSelect: (Page) -> 
         }
     }
     if (rail) GlassSurface(Modifier.padding(12.dp).width(92.dp).fillMaxHeight(), radius = 32) {
-        Column(Modifier.fillMaxSize().padding(vertical = 18.dp), horizontalAlignment = Alignment.CenterHorizontally,
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(vertical = 18.dp), horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Text("RC", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = colors.primary)
-            Spacer(Modifier.height(12.dp)); Page.entries.forEach { content(it, Modifier.fillMaxWidth()) }
+            Page.entries.forEach { content(it, Modifier.fillMaxWidth()) }
         }
     } else GlassSurface(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 10.dp).fillMaxWidth(), radius = 32) {
         Row(Modifier.fillMaxWidth().padding(6.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
@@ -139,8 +138,7 @@ internal fun GlassNavigation(selected: Page, rail: Boolean, onSelect: (Page) -> 
 private fun PageHeader(page: Page, trailing: @Composable () -> Unit = {}) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 20.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text(page.subtitle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(page.title, fontSize = 28.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 6.dp))
+            Text(page.title, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
         }
         trailing()
     }
@@ -163,7 +161,7 @@ private fun ToolButton(icon: ImageVector, label: String, enabled: Boolean = true
 internal fun LiveScreen(live: LiveState, recording: RecordingState, settings: UserSettings, modelCount: Int,
     setDemo: (Boolean) -> Unit, startDemo: () -> Unit, pauseDemo: () -> Unit, stopDemo: () -> Unit,
     record: (String) -> Unit, toggleBilingual: () -> Unit, openModels: () -> Unit,
-    processing: ConversationState = ConversationState()) {
+    processing: ConversationState = ConversationState(), changeMode: (TranslationMode) -> Unit = {}) {
     val context = LocalContext.current
     var permissionError by remember { mutableStateOf(false) }
     var notificationDenied by remember { mutableStateOf(false) }
@@ -185,24 +183,37 @@ internal fun LiveScreen(live: LiveState, recording: RecordingState, settings: Us
     FoldLiveLayout(body = { Column(Modifier.fillMaxSize()) {
         PageHeader(Page.LIVE) {
             ToolButton(if (settings.bilingual) Icons.Outlined.Translate else Icons.Outlined.Subtitles,
-                if (settings.bilingual) "切换为仅中文" else "切换为双语", onClick = toggleBilingual)
+                if (settings.bilingual) "切换为仅译文" else "切换为双语", onClick = toggleBilingual)
         }
         if (LocalDensity.current.fontScale > 1.3f) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp)) {
-                Text(if (live.demo) "演示数据" else "仅在本机", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium)
+                if (live.demo) Text("演示数据", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium)
                 InputModeSwitch(live.demo, !active && !paused && !starting, Modifier.fillMaxWidth().padding(top = 10.dp), setDemo)
             }
         } else {
             Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(if (live.demo) "演示数据" else "仅在本机", color = MaterialTheme.colorScheme.primary,
-                    style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f))
+                Box(Modifier.weight(1f)) {
+                    if (live.demo) Text("演示数据", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium)
+                }
                 InputModeSwitch(live.demo, !active && !paused && !starting, onChange = setDemo)
+            }
+        }
+        var modesOpen by remember { mutableStateOf(false) }
+        Box(Modifier.padding(horizontal = 24.dp)) {
+            TextButton(onClick = { modesOpen = true }, enabled = !active && !paused && !starting) {
+                Text("语言：${settings.translationMode.label}")
+                Icon(Icons.Outlined.ArrowDropDown, "选择翻译语言")
+            }
+            DropdownMenu(expanded = modesOpen, onDismissRequest = { modesOpen = false }) {
+                TranslationMode.entries.forEach { mode ->
+                    DropdownMenuItem(text = { Text(mode.label) }, onClick = { modesOpen = false; changeMode(mode) })
+                }
             }
         }
         if (!live.demo) Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp)
             .clickable(onClick = openModels), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Outlined.Info, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(if (modelCount == 0) "请安装离线模型" else "$modelCount 个模型已安装 · 完全本地推理",
+            Text(if (modelCount == 0) "请安装离线模型" else "$modelCount 个模型已安装",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f).padding(start = 6.dp))
             Icon(Icons.AutoMirrored.Outlined.ArrowForward, "打开模型", Modifier.size(16.dp))
@@ -218,12 +229,8 @@ internal fun LiveScreen(live: LiveState, recording: RecordingState, settings: Us
             if (live.captions.isNotEmpty() && followBottom && !listState.isScrollInProgress) listState.animateScrollToItem(live.captions.lastIndex)
         }
         Box(Modifier.weight(1f).fillMaxWidth()) {
-            if (live.captions.isEmpty()) Column(Modifier.align(Alignment.Center).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(Icons.Outlined.GraphicEq, null, Modifier.size(56.dp), tint = MaterialTheme.colorScheme.primary.copy(alpha = .65f))
-                Text(if (active && !live.demo) "正在拾音" else "每一种语言，都听得见", fontSize = 23.sp,
-                    fontWeight = FontWeight.Medium, modifier = Modifier.padding(top = 20.dp))
-                Text(if (live.demo) "中 · 英 · 日 / 对话演示" else "拾音测试", color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 8.dp))
+            if (live.captions.isEmpty()) Box(Modifier.align(Alignment.Center).padding(16.dp)) {
+                Text(if (active && !live.demo) "正在拾音" else "暂无字幕", color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else LazyColumn(state = listState, modifier = Modifier.testTag("live-captions"), contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 14.dp, bottom = 20.dp)) {
                 items(live.captions, key = { it.segmentId }) { CaptionRow(it, settings) }
             }
@@ -293,7 +300,7 @@ private fun TranslationCompanion(item: SubtitleItem?, settings: UserSettings, mo
             Text("${item.speakerId?.let { "Speaker $it" } ?: "未知说话人"} · ${item.sourceLanguage.label}",
                 style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 24.dp))
             val text = when {
-                item.sourceLanguage == SourceLanguage.ZH -> item.sourceText
+                item.translationStatus == TranslationStatus.NOT_REQUIRED -> item.sourceText
                 item.targetText.isNotBlank() -> item.targetText
                 item.translationStatus == TranslationStatus.UNAVAILABLE -> "译文不可用"
                 item.stage == CaptionStage.PARTIAL -> "识别中"
@@ -370,19 +377,16 @@ internal fun ModelsScreen(state: ModelState, import: (Uri) -> Unit, delete: (Str
         PageHeader(Page.MODELS) { ToolButton(Icons.Outlined.FileUpload, "导入模型包", !state.busy && !state.inUse) { picker.launch(arrayOf("application/zip", "application/octet-stream")) } }
         Column(Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
                 Text("${state.installed.size} / ${modelSlots.size} 已安装", fontSize = 24.sp, fontWeight = FontWeight.Medium)
-                Text(if (state.inUse) "会话正在使用模型" else "sherpa-onnx · Foxlet", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp, bottom = 20.dp))
+                if (state.inUse) Text("会话正在使用模型", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
                 if (state.busy) { LinearProgressIndicator(Modifier.fillMaxWidth()); Text("正在导入与校验", Modifier.padding(vertical = 12.dp)) }
                 state.message?.let { Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 16.dp)) }
             SectionLabel("语音模型")
-            modelSlots.filter { it.id !in setOf("en-zh", "ja-en") }.forEach { slot -> ModelRow(slot, state) { deleting = slot } }
+            modelSlots.filter { it.id !in setOf("hy-mt2") }.forEach { slot -> ModelRow(slot, state) { deleting = slot } }
         }
     } }, secondary = { dual -> Column(Modifier.fillMaxWidth().then(if (dual) Modifier.fillMaxHeight().verticalScroll(translationScroll) else Modifier)
         .padding(horizontal = 24.dp, vertical = 8.dp)) {
             SectionLabel("翻译模型")
-            modelSlots.filter { it.id in setOf("en-zh", "ja-en") }.forEach { slot -> ModelRow(slot, state) { deleting = slot } }
-            Text("离线部署", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 24.dp))
-            Text("模型包 ZIP · manifest.json · ARM64", style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp, bottom = 16.dp))
+            modelSlots.filter { it.id in setOf("hy-mt2") }.forEach { slot -> ModelRow(slot, state) { deleting = slot } }
             OutlinedButton(onClick = { picker.launch(arrayOf("application/zip", "application/octet-stream")) }, enabled = !state.busy && !state.inUse,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                 Icon(Icons.Outlined.FolderOpen, null, Modifier.size(20.dp)); Spacer(Modifier.width(8.dp)); Text("从本地导入")
@@ -444,7 +448,7 @@ internal fun SessionsScreen(sessions: List<SavedSession>, settings: UserSettings
                 verticalArrangement = Arrangement.Center) {
                 Icon(Icons.Outlined.History, null, Modifier.size(52.dp), tint = MaterialTheme.colorScheme.primary)
                 Text("还没有对话记录", fontSize = 22.sp, modifier = Modifier.padding(top = 18.dp))
-                Text(if (settings.keepSessions) "仅保存在此设备" else "本地记录已关闭", color = MaterialTheme.colorScheme.onSurfaceVariant,
+                if (!settings.keepSessions) Text("本地记录已关闭", color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 8.dp))
             } else LazyColumn(state = listState, modifier = Modifier.weight(1f).testTag("sessions-list"),
                 contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp)) {
@@ -530,13 +534,13 @@ internal fun SettingsScreen(settings: UserSettings, recording: RecordingState, u
         PageHeader(Page.SETTINGS)
         Column(Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
             SectionLabel("显示")
-            SettingSwitch("双语字幕", "原文与简体中文", settings.bilingual) { update(SettingsChange(bilingual = it)) }
+            SettingSwitch("双语字幕", settings.bilingual) { update(SettingsChange(bilingual = it)) }
             Text("字幕字号", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 18.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Slider(settings.fontSize, { update(SettingsChange(fontSize = it)) }, valueRange = 16f..28f, steps = 5, modifier = Modifier.weight(1f))
                 Text("${settings.fontSize.toInt()}", modifier = Modifier.padding(start = 16.dp))
             }
-            Text("每一种语言，都听得见", fontSize = settings.fontSize.sp, modifier = Modifier.padding(vertical = 14.dp))
+            Text("字幕预览", fontSize = settings.fontSize.sp, modifier = Modifier.padding(vertical = 14.dp))
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .5f))
             Text("外观", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 20.dp, bottom = 12.dp))
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
@@ -545,9 +549,9 @@ internal fun SettingsScreen(settings: UserSettings, recording: RecordingState, u
                         shape = SegmentedButtonDefaults.itemShape(index, 3), icon = {}) { Text(theme.label, fontSize = 12.sp) }
                 }
             }
-            SettingSwitch("降低透明度", "增强背景与字幕对比", settings.reduceTransparency) { update(SettingsChange(reduceTransparency = it)) }
+            SettingSwitch("降低透明度", settings.reduceTransparency) { update(SettingsChange(reduceTransparency = it)) }
             SectionLabel("隐私")
-            SettingSwitch("保留对话记录", "文本仅保存在本机", settings.keepSessions) { update(SettingsChange(keepSessions = it)) }
+            SettingSwitch("保留对话记录", settings.keepSessions) { update(SettingsChange(keepSessions = it)) }
             Text("不保存原始音频", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 16.dp))
         }
     } }, secondary = { dual -> Column(Modifier.fillMaxWidth().then(if (dual) Modifier.fillMaxHeight().verticalScroll(runtimeScroll) else Modifier)
@@ -577,14 +581,14 @@ internal fun SettingsScreen(settings: UserSettings, recording: RecordingState, u
             DiagnosticRow("队列丢帧", recording.droppedFrames.toString())
             DiagnosticRow("未处理语段", processing.droppedSegments.toString())
             DiagnosticRow("最近识别耗时", "${processing.asrMillis} ms")
-            DiagnosticRow("翻译路径", "EN → 中文 / JA → EN → 中文")
+            DiagnosticRow("翻译语言", settings.translationMode.label)
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text("运行诊断", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
                 ToolButton(Icons.Outlined.FileDownload, "导出运行诊断", hasDiagnostics) { diagnosticMenu = true }
             }
             SectionLabel("RC 本地同传")
             TextButton(onClick = { licenses = true }) { Text("开源许可") }
-            Text("$version · Android Native", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 24.dp))
+            Text(version, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 24.dp))
     } })
     if (licenses) LicenseDialog { licenses = false }
     if (diagnosticMenu) FoldAlertDialog(onDismissRequest = { diagnosticMenu = false }, title = { Text("导出运行诊断") },
@@ -607,11 +611,10 @@ private fun SectionLabel(text: String) {
         modifier = Modifier.padding(top = 18.dp, bottom = 14.dp))
 }
 @Composable
-private fun SettingSwitch(title: String, subtitle: String, checked: Boolean, onChecked: (Boolean) -> Unit) {
+private fun SettingSwitch(title: String, checked: Boolean, onChecked: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth().toggleable(checked, role = Role.Switch, onValueChange = onChecked).padding(vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f).padding(end = 12.dp)) {
             Text(title, style = MaterialTheme.typography.titleSmall)
-            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 5.dp))
         }
         Switch(checked, onCheckedChange = null)
     }

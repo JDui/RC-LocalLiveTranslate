@@ -5,6 +5,30 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SubtitleReducerTest {
+    @Test fun allPairsRouteBothDirectionsAndIgnoreThirdLanguage() {
+        for ((mode, a, b) in listOf(Triple(TranslationMode.ZH_JA, SourceLanguage.ZH, SourceLanguage.JA),
+            Triple(TranslationMode.ZH_EN, SourceLanguage.ZH, SourceLanguage.EN),
+            Triple(TranslationMode.EN_JA, SourceLanguage.EN, SourceLanguage.JA))) {
+            assertEquals(b, mode.target(a)); assertEquals(a, mode.target(b))
+            assertNull(mode.target(SourceLanguage.UNKNOWN))
+            val third = listOf(SourceLanguage.ZH, SourceLanguage.EN, SourceLanguage.JA).single { it != a && it != b }
+            assertNull(mode.target(third))
+            val reducer = SubtitleReducer("session", mode)
+            reducer.apply(text(0, a)); reducer.apply(SubtitleEvent.Speaker("session", "segment", 0, "A"))
+            reducer.apply(SubtitleEvent.Translation("session", "segment", 0, "translated"))
+            assertEquals(b, reducer.snapshot().single().targetLanguage)
+            assertEquals("translated", reducer.snapshot().single().targetText)
+            reducer.apply(text(1, b))
+            reducer.apply(SubtitleEvent.Translation("session", "segment", 0, "stale"))
+            assertEquals(a, reducer.snapshot().single().targetLanguage)
+            assertEquals("", reducer.snapshot().single().targetText)
+            assertEquals("A", reducer.snapshot().single().speakerId)
+            reducer.apply(text(2, third))
+            reducer.apply(SubtitleEvent.Translation("session", "segment", 2, "wrong"))
+            assertEquals(TranslationStatus.NOT_REQUIRED, reducer.snapshot().single().translationStatus)
+            assertEquals("", reducer.snapshot().single().targetText)
+        }
+    }
     private fun text(revision: Int, language: SourceLanguage = SourceLanguage.EN, value: String = "Hello") =
         SubtitleEvent.Transcript("session", "segment", revision, 0, 48_000, language, value, CaptionStage.FINAL)
     @Test fun lateTextAndOtherSessionCannotReplaceLatestRevision() {

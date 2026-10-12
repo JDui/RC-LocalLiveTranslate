@@ -10,11 +10,12 @@ New-Item -ItemType Directory -Force -Path $taskTemp | Out-Null
 $env:JAVA_TOOL_OPTIONS = "-Djdk.net.unixdomain.tmpdir=$taskTemp"
 Push-Location $projectRoot
 try {
-    $requiredNative = @('native/foxlet-v0.5.0.aar', 'native/sherpa/kotlin/Vad.kt',
+    $requiredNative = @('native/sherpa/kotlin/Vad.kt',
         'native/sherpa/kotlin/VersionInfo.kt', 'native/sherpa/kotlin/WaveReader.kt',
-        'native/sherpa/jniLibs/arm64-v8a/libsherpa-onnx-jni.so', 'native/assets/licenses/foxlet/SOURCE.txt',
+        'native/sherpa/jniLibs/arm64-v8a/libsherpa-onnx-jni.so', 'native/assets/licenses/hymt/SOURCE.txt',
         'native/assets/licenses/onnxruntime-1.28.2-ThirdPartyNotices.txt', 'native/assets/licenses/sherpa-dependencies/SOURCE.txt')
     if ($requiredNative | Where-Object { !(Test-Path (Join-Path $toolsRoot $_)) }) { & (Join-Path $PSScriptRoot 'bootstrap-native.ps1') }
+    & (Join-Path $PSScriptRoot 'build-hymt-native.ps1')
     $nativeSource = Get-Content -LiteralPath (Join-Path $toolsRoot 'native/assets/licenses/sherpa-dependencies/SOURCE.txt') -Raw | ConvertFrom-Json
     if ($nativeSource.sherpaCommit -cne '11afbd009a7f8c08f4bcf2fc1b265d0df4670fbf' -or
         $nativeSource.tts -ne $false -or $nativeSource.offlineDiarization -ne $false -or $nativeSource.speakerEmbedding -ne $true) {

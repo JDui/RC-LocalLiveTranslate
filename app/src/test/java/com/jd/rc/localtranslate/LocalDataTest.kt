@@ -26,6 +26,15 @@ import org.robolectric.annotation.LooperMode
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], application = TranslateApplication::class)
 class LocalDataTest {
+    @Test fun pairPreferenceAndCaptionTargetLanguageRoundTrip() = runBlocking {
+        val app = ApplicationProvider.getApplicationContext<TranslateApplication>()
+        app.settings.update(SettingsChange(translationMode = TranslationMode.ZH_JA))
+        assertEquals(TranslationMode.ZH_JA, app.settings.settings.first().translationMode)
+        val item = SubtitleItem("session", "segment", 0, 16000, sourceLanguage = SourceLanguage.ZH,
+            sourceText = "早上好", targetText = "おはようございます", targetLanguage = SourceLanguage.JA)
+        assertEquals(listOf(item), CaptionJson.decode(CaptionJson.encode(listOf(item))))
+    }
+
     @Test fun mergedManifestKeepsMicrophoneButNoNetworkPermissions() {
         val app = ApplicationProvider.getApplicationContext<TranslateApplication>()
         val permissions = app.packageManager.getPackageInfo(app.packageName, PackageManager.GET_PERMISSIONS).requestedPermissions.orEmpty().toSet()

@@ -14,7 +14,7 @@ import java.io.File
 fun androidDiagnostics(context: Context, source: RunSource, lease: ModelLease, installed: List<InstalledModel>): RunDiagnostics {
     val device = linkedMapOf("manufacturer" to Build.MANUFACTURER, "model" to Build.MODEL,
         "sdk" to Build.VERSION.SDK_INT.toString(), "appVersion" to context.packageManager.getPackageInfo(context.packageName, 0).versionName.orEmpty(),
-        "sherpaVersion" to "1.13.8", "foxletVersion" to "0.5.0")
+        "sherpaVersion" to "1.13.8", "translationBackend" to "Hy-MT2 STQ1_0", "llamaCommit" to "1e411d8f5a1e23525fa3265dfb4bd76265465397")
     if (Build.VERSION.SDK_INT >= 31) device["soc"] = Build.SOC_MODEL
     return RunDiagnostics(source, device, lease.bundles.map { (id, bundle) ->
         DiagnosticModel(id, installed.find { it.id == id }?.version.orEmpty(), bundle.hashes.toMap())

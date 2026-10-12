@@ -23,6 +23,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlin.math.sqrt
@@ -159,7 +160,7 @@ class RecordingService : Service() {
                 } catch (error: Throwable) { lease.close(); throw error }
                 pendingEngines = engines
                 offset = 0; dropped = 0; recoveries = 0; sessionId = java.util.UUID.randomUUID().toString()
-                controller.conversation.begin(sessionId)
+                controller.conversation.begin(sessionId, app.settings.settings.first().translationMode)
                 pipeline = RealtimePipeline(sessionId, engines, controller.conversation, scope, sessionPerformance, diagnostics!!) {
                     stopRequested = true; captureJob?.cancel(); commands.trySend(STOP)
                 }

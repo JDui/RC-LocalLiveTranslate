@@ -22,8 +22,7 @@ val modelSlots = listOf(
     ModelSlot("sensevoice", "SenseVoice Small", "中 / 英 / 日 · 语音识别与语言检测"),
     ModelSlot("silero-vad", "Silero VAD", "语音活动检测"),
     ModelSlot("speaker", "Speaker Embedding", "会话内说话人分离"),
-    ModelSlot("en-zh", "English → 中文", "Foxlet · 英译中"),
-    ModelSlot("ja-en", "日本語 → English", "Foxlet · 日译英中转"),
+    ModelSlot("hy-mt2", "Hy-MT2 1.8B · 1.25-bit", "中 / 英 / 日互译"),
 )
 data class InstalledModel(val id: String, val version: String, val license: String,
     val source: String, val sizeBytes: Long)
@@ -121,6 +120,7 @@ class ModelRepository(private val context: Context) {
                 require(stage.walkTopDown().filter { it.isFile }.all { it.relativeTo(stage).invariantSeparatorsPath in declared }) {
                     "模型包包含未登记文件。"
                 }
+                if (id == "hy-mt2") HyModelProfile.validate(manifest)
                 val installed = File(root, id)
                 val backup = File(root, ".backup-$id")
                 if (backup.exists()) {
@@ -170,7 +170,9 @@ class ModelRepository(private val context: Context) {
         refreshLocked()
         val bundles = mutable.value.installed.associate { installed ->
             val dir = File(root, installed.id)
-            val specs = JSONObject(File(dir, "manifest.json").readText()).getJSONArray("files")
+            val manifest = JSONObject(File(dir, "manifest.json").readText())
+            if (installed.id == "hy-mt2") HyModelProfile.validate(manifest)
+            val specs = manifest.getJSONArray("files")
             val files = linkedMapOf<String, File>(); val hashes = linkedMapOf<String, String>()
             for (i in 0 until specs.length()) {
                 val spec = specs.getJSONObject(i); val path = spec.getString("path")

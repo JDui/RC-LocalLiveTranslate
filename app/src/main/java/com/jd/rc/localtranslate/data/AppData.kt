@@ -22,17 +22,19 @@ private val Context.preferences by preferencesDataStore("settings")
 enum class ThemeMode(val label: String) { SYSTEM("跟随系统"), LIGHT("浅色"), DARK("深色") }
 data class UserSettings(val theme: ThemeMode = ThemeMode.SYSTEM, val bilingual: Boolean = true,
     val fontSize: Float = 19f, val keepSessions: Boolean = true, val reduceTransparency: Boolean = false,
-    val performanceMode: PerformanceMode = PerformanceMode.AUTO)
+    val performanceMode: PerformanceMode = PerformanceMode.AUTO,
+    val translationMode: TranslationMode = TranslationMode.TO_ZH)
 
 /** Only explicit user changes are written; a stale UI snapshot cannot restore unrelated settings. */
 data class SettingsChange(val theme: ThemeMode? = null, val bilingual: Boolean? = null,
     val fontSize: Float? = null, val keepSessions: Boolean? = null, val reduceTransparency: Boolean? = null,
-    val performanceMode: PerformanceMode? = null) {
+    val performanceMode: PerformanceMode? = null, val translationMode: TranslationMode? = null) {
     fun applyTo(current: UserSettings) = current.copy(theme = theme ?: current.theme,
         bilingual = bilingual ?: current.bilingual, fontSize = fontSize?.coerceIn(16f, 28f) ?: current.fontSize,
         keepSessions = keepSessions ?: current.keepSessions,
         reduceTransparency = reduceTransparency ?: current.reduceTransparency,
-        performanceMode = performanceMode ?: current.performanceMode)
+        performanceMode = performanceMode ?: current.performanceMode,
+        translationMode = translationMode ?: current.translationMode)
 }
 
 class SettingsRepository(private val context: Context) {
@@ -42,11 +44,13 @@ class SettingsRepository(private val context: Context) {
     private val font = floatPreferencesKey("font_size")
     private val keep = booleanPreferencesKey("keep_sessions")
     private val opaque = booleanPreferencesKey("reduce_transparency")
+    private val translation = stringPreferencesKey("translation_mode")
     private val performance = stringPreferencesKey("performance_mode")
     val settings = context.preferences.data.catch { if (it is IOException) emit(emptyPreferences()) else throw it }.map {
         UserSettings(ThemeMode.entries.find { mode -> mode.name == it[theme] } ?: ThemeMode.SYSTEM,
             it[bilingual] ?: true, (it[font] ?: 19f).coerceIn(16f, 28f), it[keep] ?: true, it[opaque] ?: false,
-            PerformanceMode.entries.find { mode -> mode.name == it[performance] } ?: PerformanceMode.AUTO)
+            PerformanceMode.entries.find { mode -> mode.name == it[performance] } ?: PerformanceMode.AUTO,
+            TranslationMode.entries.find { mode -> mode.name == it[translation] } ?: TranslationMode.TO_ZH)
     }
     suspend fun canKeepSessions(): Boolean {
         if (keepIntent == false) return false
@@ -63,11 +67,12 @@ class SettingsRepository(private val context: Context) {
             change.fontSize?.let { value -> it[font] = value.coerceIn(16f, 28f) }
             change.keepSessions?.let { value -> it[keep] = value }
             change.reduceTransparency?.let { value -> it[opaque] = value }
+            change.translationMode?.let { value -> it[translation] = value.name }
             change.performanceMode?.let { value -> it[performance] = value.name }
         }
     }
     suspend fun update(value: UserSettings) = update(SettingsChange(value.theme, value.bilingual,
-        value.fontSize, value.keepSessions, value.reduceTransparency, value.performanceMode))
+        value.fontSize, value.keepSessions, value.reduceTransparency, value.performanceMode, value.translationMode))
 }
 
 @Entity(tableName = "sessions")
@@ -89,6 +94,7 @@ object CaptionJson {
         put("startSample", item.startSample); put("endSample", item.endSample); put("revision", item.revision)
         put("language", item.sourceLanguage.name); put("source", item.sourceText); put("target", item.targetText)
         put("speaker", item.speakerId ?: JSONObject.NULL); put("stage", item.stage.name)
+        put("targetLanguage", item.targetLanguage?.name ?: JSONObject.NULL)
         put("translationStatus", item.translationStatus.name)
         put("speakerRevision", item.speakerRevision); put("translationRevision", item.translationRevision)
     }) } }.toString(2)
@@ -99,7 +105,9 @@ object CaptionJson {
                 it.getLong("endSample"), it.getInt("revision"), SourceLanguage.valueOf(it.getString("language")),
                 it.getString("source"), it.getString("target"), if (it.isNull("speaker")) null else it.getString("speaker"),
                 CaptionStage.valueOf(it.getString("stage")), TranslationStatus.valueOf(it.getString("translationStatus")),
-                it.optInt("speakerRevision", -1), it.optInt("translationRevision", -1))
+                it.optInt("speakerRevision", -1), it.optInt("translationRevision", -1),
+                if (it.has("targetLanguage")) { if (it.isNull("targetLanguage")) null else SourceLanguage.valueOf(it.getString("targetLanguage")) }
+                else TranslationMode.TO_ZH.target(SourceLanguage.valueOf(it.getString("language"))))
         } }
     }
 }

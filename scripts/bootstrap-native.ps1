@@ -32,23 +32,11 @@ $files = @('OfflineRecognizer.kt', 'OfflineStream.kt', 'FeatureConfig.kt', 'QnnC
     'VersionInfo.kt', 'WaveReader.kt')
 foreach ($file in $files) { Copy-Item -LiteralPath (Join-Path $sherpa "sherpa-onnx/kotlin-api/$file") -Destination $api }
 
-$aar = Join-Path $tools 'foxlet-v0.5.0.aar'
-Get-Artifact 'https://github.com/yinvoke/foxlet-translate/releases/download/v0.5.0/foxlet-v0.5.0.aar' $aar '5dbb384907d69c2aba129fd15dba30dda94ede0fa556dc6a167d041ee479ec0e'
-Copy-Item -LiteralPath $aar -Destination (Join-Path $native 'foxlet-v0.5.0.aar')
-$foxlet = Join-Path $native 'foxlet-distribution'
-Add-Type -AssemblyName System.IO.Compression.FileSystem
-[System.IO.Compression.ZipFile]::ExtractToDirectory($aar, $foxlet, $true)
-$classes = Join-Path $native 'foxlet-resources'
-[System.IO.Compression.ZipFile]::ExtractToDirectory((Join-Path $foxlet 'classes.jar'), $classes, $true)
 $licenses = Join-Path $native 'assets/licenses'
 New-Item -ItemType Directory -Force -Path $licenses | Out-Null
 Copy-Item -LiteralPath (Join-Path $sherpa 'LICENSE') -Destination (Join-Path $licenses 'sherpa-onnx-Apache-2.0.txt')
-$foxletLicenses = Join-Path $licenses 'foxlet'
-New-Item -ItemType Directory -Force -Path $foxletLicenses | Out-Null
-Get-ChildItem -LiteralPath (Join-Path $classes 'io/github/yinvoker/foxlet/licenses') | ForEach-Object {
-    Copy-Item -LiteralPath $_.FullName -Destination $foxletLicenses -Recurse -Force
-}
 Get-Artifact 'https://raw.githubusercontent.com/microsoft/onnxruntime/v1.28.2/LICENSE' (Join-Path $licenses 'onnxruntime-1.28.2-MIT.txt')
 Get-Artifact 'https://raw.githubusercontent.com/microsoft/onnxruntime/v1.28.2/ThirdPartyNotices.txt' (Join-Path $licenses 'onnxruntime-1.28.2-ThirdPartyNotices.txt')
 & (Join-Path $PSScriptRoot 'build-sherpa-android.ps1')
-Write-Output 'Pinned native SDKs ready: sherpa-onnx 1.13.8 no-TTS and Foxlet 0.5.0 (ARM64). No model weights included.'
+& (Join-Path $PSScriptRoot 'build-hymt-native.ps1')
+Write-Output 'Pinned sherpa no-TTS and Hy-MT2 STQ SDKs ready. No weights included.'

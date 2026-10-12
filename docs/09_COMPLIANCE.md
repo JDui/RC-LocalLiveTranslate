@@ -7,8 +7,9 @@
 | sherpa-onnx 核心 | Apache-2.0 | 保留适用版权/NOTICE，核对原生依赖 |
 | 无 TTS JNI 的原生传递组件 | Kaldi / OpenFST / simple-sentencepiece Apache-2.0、KissFFT BSD-3-Clause、nlohmann JSON MIT、Eigen 5.0.1 MPL-2.0 及其兼容第三方条款 | 全文、公开源码版权行和固定 SOURCE 已随包保留；Eigen 未修改，保留对应源码取得方式 |
 | AndroidX Media3 common 1.11.1 / Sonic | Apache-2.0 | 随包保留全文及 AOSP / Bill Cox 署名，发行前核查传递依赖 |
-| Foxlet 原创代码 | MIT | AAR 中第三方组件另有许可 |
-| Bergamot/Mozilla MT 权重 | Foxlet NOTICE 与 Mozilla 维护者声明 MPL-2.0；英中 2.2 / 日英 2.1 制品已锁定 | 本地包保留许可全文 / SOURCE；公开分发前复核适用源码取得方式 |
+| llama.cpp / ggml STQ runtime | MIT，固定 PR #22836 提交 | 保留全文与 SOURCE；不编译网络工具，实验 PR 状态见 ADR-0006 |
+| 腾讯 Hy-MT2 1.8B 1.25-bit 权重 | 固定 revision 的 LICENSE.txt 为 Apache-2.0 | 本地包保留版权、完整许可、来源、发布者摘要；权重不提交 Git / APK |
+| 旧 Bergamot/Mozilla MT 权重（退出当前运行路径） | Foxlet NOTICE 与 Mozilla 维护者声明 MPL-2.0；英中 2.2 / 日英 2.1 制品已锁定 | 本地包保留许可全文 / SOURCE；公开分发前复核适用源码取得方式 |
 | SenseVoice 源码 | MIT | 不等于权重许可证 |
 | SenseVoice 2024 基线权重 | 官方模型卡指向 FunASR Model License 1.1，全文和来源已随本地包保留 | 自定义权重条款；完整再分发审核未完成，不当作 MIT / Apache |
 | Silero VAD asset 271935959 | 官方 MIT 声明，固定原文随本地包保留 | 保留 Silero Team 版权，复核实际发行制品 |
@@ -49,3 +50,5 @@ GUI Macrobenchmark 使用独立测试包和独立目标包，正式应用不新�
 Android 受限制的麦克风前台服务一般不能从任意后台状态/BOOT_COMPLETED 创建；用户必须通过可见界面明确开启录音。停止入口始终可达。监测 Android 17 的 App memory limit 新行为。
 
 来源：[Android mic foreground service](https://developer.android.com/develop/background-work/services/fgs/service-types)、[Audio playback capture](https://developer.android.com/media/platform/av-capture)、[Android 17](https://developer.android.com/about/versions/17)。
+
+当前发行依赖已移除 Foxlet AAR。旧许可材料及模型目录不主动删除；历史验证段中的 Foxlet 信息不表示当前 APK 仍加载该引擎。Hy-MT2 的模型许可不替代本项目许可，STQ 运行库为 MIT。

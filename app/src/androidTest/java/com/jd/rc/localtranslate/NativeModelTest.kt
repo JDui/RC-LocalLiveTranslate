@@ -34,7 +34,7 @@ class NativeModelTest {
         assertTrue(audio.samples.isNotEmpty())
         assertTrue("Limit test WAV to 90 seconds", audio.samples.size <= audio.sampleRate * 90)
         app.models.refresh()
-        assertTrue("Install audited en-zh package for this test", app.models.state.value.installed.any { it.id == "en-zh" })
+        assertTrue("Install audited Hy-MT2 package for this test", app.models.state.value.installed.any { it.id == "hy-mt2" })
         val lease = app.models.acquire()
         val diagnostics = try { androidDiagnostics(app, RunSource.ANDROID_TEST_FIXTURE, lease, app.models.state.value.installed) }
         catch (error: Throwable) { lease.close(); throw error }
@@ -70,7 +70,7 @@ class NativeModelTest {
             try { frontend.finish() } finally {
                 try { pipeline.finish() } finally {
                     withContext(Dispatchers.IO) {
-                        val directory = File(instrumentation.context.filesDir, "diagnostics").apply { check(mkdirs() || isDirectory) }
+                        val directory = File(app.filesDir, "validation/diagnostics").apply { check(mkdirs() || isDirectory) }
                         val report = diagnostics.report()
                         File(directory, "native-model.json").writeText(DiagnosticExport.json(report), Charsets.UTF_8)
                         File(directory, "native-model.csv").writeText(DiagnosticExport.csv(report), Charsets.UTF_8)

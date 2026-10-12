@@ -1,5 +1,5 @@
 param(
-    [Parameter(Mandatory)][ValidateSet('sensevoice', 'silero-vad', 'speaker', 'en-zh', 'ja-en')][string]$Id,
+    [Parameter(Mandatory)][ValidateSet('sensevoice', 'silero-vad', 'speaker', 'en-zh', 'ja-en', 'hy-mt2')][string]$Id,
     [Parameter(Mandatory)][string]$SourceDirectory,
     [Parameter(Mandatory)][string]$Version,
     [Parameter(Mandatory)][string]$License,
@@ -15,6 +15,7 @@ function Find-One([string]$Pattern) {
     return $matches[0]
 }
 switch ($Id) {
+    'hy-mt2' { $entries['model.gguf'] = Find-One 'model.gguf' }
     'sensevoice' { $entries['model.onnx'] = Find-One '*.onnx'; $entries['tokens.txt'] = Find-One 'tokens.txt' }
     'silero-vad' { $entries['silero_vad.onnx'] = Find-One '*.onnx' }
     'speaker' { $entries['speaker.onnx'] = Find-One '*.onnx' }
@@ -38,6 +39,7 @@ $files = @($entries.GetEnumerator() | ForEach-Object {
 })
 if ($total -gt 1GB -or $files.Count -gt 64) { throw 'Model package exceeds import limits' }
 $manifest = @{ id = $Id; version = $Version; abi = 'arm64-v8a'; license = $License; sourceURL = $SourceURL; files = $files }
+if ($Id -eq 'hy-mt2') { $manifest.quantization = 'STQ1_0' }
 $json = [System.Text.Encoding]::UTF8.GetBytes(($manifest | ConvertTo-Json -Depth 6))
 if ($json.Length -gt 64KB -or $total + $json.Length -gt 1GB) { throw 'Manifest or complete uncompressed package exceeds import limits' }
 Add-Type -AssemblyName System.IO.Compression.FileSystem

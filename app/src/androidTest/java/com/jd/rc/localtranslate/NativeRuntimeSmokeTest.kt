@@ -5,10 +5,6 @@ import android.content.pm.PackageManager
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.k2fsa.sherpa.onnx.VersionInfo
-import io.github.yinvoker.foxlet.Foxlet
-import io.github.yinvoker.foxlet.FoxletConfig
-import io.github.yinvoker.foxlet.ModelRetention
-import io.github.yinvoker.foxlet.TranslationConfig
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Test
@@ -23,11 +19,13 @@ class NativeRuntimeSmokeTest {
         assertEquals("1.13.8", VersionInfo.version)
         assertEquals("1.28.2", VersionInfo.onnxruntimeVersion)
     }
-    @Test fun foxletCanCreateReleaseAndRecreateWithoutModelsOrDownloads() = runBlocking {
+    @Test fun hyJniLoadsAndRejectsMissingModelWithoutDownloads() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        repeat(2) {
-            val client = Foxlet.create(context, FoxletConfig(translation = TranslationConfig(retention = ModelRetention.AfterRequest)))
-            try { assertEquals(0, client.translator.getState().loadedModelCount) } finally { client.shutdown() }
-        }
+        val translator = com.jd.rc.localtranslate.inference.HyTranslator(java.io.File(context.filesDir, "missing.gguf"))
+        try {
+            var rejected = false
+            try { translator.translate("Hello") } catch (_: IllegalStateException) { rejected = true }
+            assertTrue(rejected)
+        } finally { translator.close(); translator.close() }
     }
 }

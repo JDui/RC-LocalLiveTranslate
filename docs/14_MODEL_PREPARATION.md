@@ -1,5 +1,7 @@
 # 14 — 真实模型准备与证据边界
 
+当前翻译后端已按用户选择转向 Hy-MT2 1.8B 1.25-bit；执行 scripts/prepare-hymt-model.ps1，固定来源见 hymt-model.lock.json。下方 Mozilla / 五包流程保留为旧阶段记录，不是当前翻译部署入口。当前四包为 SenseVoice、Silero VAD、speaker 与 Hy-MT2。
+
 ## 已准备的翻译模型（2026-10-09）
 
 | 本地包 | 上游版本 | 权重与词表字节数 | 本次 ZIP 字节数 | 词表 |

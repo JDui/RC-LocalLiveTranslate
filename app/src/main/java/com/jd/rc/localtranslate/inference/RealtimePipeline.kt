@@ -18,14 +18,14 @@ import kotlinx.coroutines.sync.withLock
 data class ConversationState(val sessionId: String = "", val captions: List<SubtitleItem> = emptyList(),
     val createdAt: Long = 0, val warning: String? = null, val droppedSegments: Long = 0, val asrMillis: Long = 0,
     val durationSamples: Long = 0, val performanceStatus: String? = null,
-    val skippedSpeakerSegments: Long = 0, val deferredTranslations: Long = 0)
+    val skippedSpeakerSegments: Long = 0, val deferredTranslations: Long = 0, val translationMode: TranslationMode = TranslationMode.TO_ZH)
 
 /** Only this store serializes independent recognizer, translator and speaker results. */
 class ConversationStore {
     private var reducer = SubtitleReducer("")
     private val mutable = MutableStateFlow(ConversationState())
     val state = mutable.asStateFlow()
-    @Synchronized fun begin(id: String) { reducer = SubtitleReducer(id); mutable.value = ConversationState(id, createdAt = System.currentTimeMillis()) }
+    @Synchronized fun begin(id: String, mode: TranslationMode = TranslationMode.TO_ZH) { reducer = SubtitleReducer(id, mode); mutable.value = ConversationState(id, createdAt = System.currentTimeMillis(), translationMode = mode) }
     @Synchronized fun event(event: SubtitleEvent) {
         if (event.sessionId == mutable.value.sessionId) {
             val captions = reducer.apply(event)
@@ -78,6 +78,7 @@ class RealtimePipeline(private val sessionId: String, private val engines: Speec
     private val runtime: StateFlow<RuntimePerformance> = MutableStateFlow(RuntimePerformance()),
     private val diagnostics: RunDiagnostics = RunDiagnostics(),
     private val onFatal: (String) -> Unit = {}) {
+    private val translationMode = store.state.value.translationMode
     private val job = SupervisorJob(parent.coroutineContext[Job])
     private val scope = CoroutineScope(parent.coroutineContext + job + Dispatchers.Default)
     private val inputStats = diagnostics.queue("inferenceInput", 32)
@@ -163,8 +164,8 @@ class RealtimePipeline(private val sessionId: String, private val engines: Speec
                     val (work, recognized) = pending ?: continue
                     ensureProcessing()
                     try {
-                        val text = diagnostics.measureSuspending(if (recognized.language == SourceLanguage.JA) InferenceStage.TRANSLATE_JA else InferenceStage.TRANSLATE_EN,
-                            queuedAtNanos = work.queuedAtNanos) { engines.translate(recognized.text, recognized.language) }
+                        val text = diagnostics.measureSuspending(when (recognized.language) { SourceLanguage.JA -> InferenceStage.TRANSLATE_JA; SourceLanguage.ZH -> InferenceStage.TRANSLATE_ZH; else -> InferenceStage.TRANSLATE_EN },
+                            queuedAtNanos = work.queuedAtNanos) { engines.translate(recognized.text, recognized.language, requireNotNull(translationMode.target(recognized.language))) }
                         ensureProcessing()
                         store.event(SubtitleEvent.Translation(sessionId, work.id, work.revision, text.orEmpty(),
                             if (text.isNullOrBlank()) TranslationStatus.UNAVAILABLE else TranslationStatus.COMPLETE))
@@ -211,12 +212,12 @@ class RealtimePipeline(private val sessionId: String, private val engines: Speec
                             val downstream = work.copy(queuedAtNanos = diagnostics.nowNanos())
                             if (speakerQueue.trySend(downstream).isSuccess) speakerStats.accepted()
                             else { speakerStats.rejected(); store.warn("声纹队列积压，部分语段暂未分配说话人。") }
-                            if (recognized.language in setOf(SourceLanguage.EN, SourceLanguage.JA) &&
+                            if (translationMode.target(recognized.language) != null &&
                                 !translations.trySend(downstream to recognized).isSuccess) {
                                 translationStats.rejected()
                                 store.event(SubtitleEvent.Translation(sessionId, work.id, work.revision, "", TranslationStatus.UNAVAILABLE))
                                 store.warn("翻译队列积压，部分语段仅显示原文。")
-                            } else if (recognized.language in setOf(SourceLanguage.EN, SourceLanguage.JA)) translationStats.accepted()
+                            } else if (translationMode.target(recognized.language) != null) translationStats.accepted()
                         }
                     }
                     if (work.final) finalized.remove(work.id)

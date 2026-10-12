@@ -1,10 +1,10 @@
 # Android 0.1.0 开发说明
 
-此版本已接通原生 GUI、采集、有界推理管线及本地数据管理。生产路径调用 sherpa Silero VAD、SenseVoice、speaker embedding 与 Foxlet；尚无 Android 实际模型运行证据，不能把“已接入”当作“已验收”。演示模式仍独立，字幕、译文和 Speaker 标签来自固定文本，界面与记录标注「演示数据」。
+此版本已接通原生 GUI、采集、有界推理管线及本地数据管理。生产路径调用 sherpa Silero VAD、SenseVoice、speaker embedding 与 Hy-MT2 STQ；尚无 Android 实际模型运行证据，不能把“已接入”当作“已验收”。演示模式仍独立，字幕、译文和 Speaker 标签来自固定文本，界面与记录标注「演示数据」。
 
 ## 工程
 
-JDK 17、Gradle 8.11.1、AGP 8.10.1、Kotlin 2.4.10、Compose BOM 2025.05.01、compile/target SDK 36、minSdk 28。版本固定在 `gradle/libs.versions.toml`。APK 仅打包 ARM64，包含 sherpa-onnx 1.13.8 JNI / ONNX Runtime 与 Foxlet 0.5.0。SDK 准备目录 `.tools/native` 不提交 Git；不包含模型权重。
+JDK 17、Gradle 8.11.1、AGP 8.10.1、Kotlin 2.4.10、Compose BOM 2025.05.01、compile/target SDK 36、minSdk 28。版本固定在 `gradle/libs.versions.toml`。APK 仅打包 ARM64，包含 sherpa-onnx 1.13.8 JNI / ONNX Runtime 与 llama.cpp STQ JNI。SDK 准备目录 `.tools/native` 不提交 Git；不包含模型权重。
 
 原生准备、模型打包及验证脚本使用 PowerShell 7（`pwsh`）。sherpa JNI 从固定源码构建，关闭 TTS / 离线 diarization，保留 VAD / ASR / speaker embedding。需要 Android SDK 内固定 NDK 29.0.14206865 与 CMake 3.22.1；不再直接使用开启 TTS 的官方 Android JNI。先安装固定工具并运行原生 SDK 准备脚本，再在 Android Studio 中打开根目录并同步，配置 JDK 17 与 SDK 36。命令行：
 
@@ -33,7 +33,7 @@ APK：`app/build/outputs/apk/debug/app-debug.apk`。测试报告：`app/build/re
 - Android 麦克风前台服务采集 PCM16 / mono，优先 16 kHz，回退 48 / 44.1 / 32 / 8 kHz。IO 线程非阻塞读取，仅 `trySend` 到容量 32 的 DSP 队列，独立 worker 用 Media3 common 1.11.1 SonicAudioProcessor 转为 16 kHz，再非阻塞送到容量 32 的推理输入队列。电平及采样时钟最多 10 Hz 更新；停止首先取消采集并释放 AudioRecord，重采样尾帧排空不等待推理。暂停还冲刷不足 512 samples 的 VAD 尾窗，恢复保留采样偏移。通知有停止入口，不保存 PCM。
 - 采样时钟由同一输入 epoch 累计样本换算，不逐帧取整。输入设备切换、原始队列缺帧结束旧 DSP 流，首个成功输出显式标记不连续，VAD 不把不同输入拼成一句。输入失效 `ERROR_DEAD_OBJECT` 30 秒内最多重开 3 次，保留恢复期间的样本缺口；权限撤销立即失败并释放。设置页显示实际 AudioRecord 输入格式、设备类型、恢复与丢帧计数。实际路由和麦克风兼容性待真机验证。
 - Silero 将音频分段，SenseVoice `language=auto`；语段中每秒至多一个候选 partial，最终语段优先于 partial。partial 队列仅保留最新项，final / speaker / translation 队列分别为 4 / 4 / 8。捕获丢帧后建立新的绝对样本区域，不压缩缺口；积压和不可用译文有可见状态。
-- 英语通过 Foxlet EN→zh-Hans，日语经 JA→EN→zh-Hans；不调用网络下载/更新 API，中文不翻译，unknown 不当作英语。初始化只创建 VAD / ASR，speaker extractor 和 Foxlet 在首次允许的任务中加载；暂停可选任务后由相应 worker 空闲释放。Foxlet 模型使用 AfterRequest 释放策略；CPU 线程配置为 ASR 2、VAD 1、speaker 1、Foxlet 1，性能尚未校准。
+- Hy-MT2 1.8B STQ1_0 支持中日、中英、英日双向选择；默认英日译中文，unknown 不猜测方向。初次需要时创建翻译 context，空闲压力降级释放，恢复时重建；单语段清空 KV。CPU ASR 2 / VAD 1 / speaker 1 / 翻译 2 threads，1024 context / 256 输出 tokens / 60 秒 CPU deadline。greedy 与上游随机采样建议不同，质量和手机性能待验收。
 - 声纹独立抽取，语段短于 1.2 秒保留 unknown。在线质心余弦匹配、歧义拒绝，至少两次匹配证据后回填之前 unknown。最近 256 份 embedding 驱动周期性高门槛合并 / 拆分，有冷却期，退休标签不复用，会话累计分配上限 16 个。合并修订所有历史字幕，拆分只修订仍有证据的语段；原文 / 译文独立修订。初始阈值属于待校准参数，不是实测准确率。标签在会话内有效，不使用语种作为身份特征，详见 04_AUDIO_AND_SPEAKERS。
 - 停止给积压任务最多 15 秒排空窗口，之后取消队列；已经进入的同步 JNI 调用仍须返回后才能释放资源，15 秒不是强制中断原生调用的保证。模型租用保持到全部 worker 退出和 native shutdown，期间禁止导入替换或删除；服务销毁也等待资源清理，防止新会话重用仍在关闭的运行库。新服务等待旧会话释放运行库后，会再次检查停止请求与当前系统压力，再开始加载模型。
 - 演示模式依次产生 partial、final、speaker 和 translation 事件；独立 revision 防止旧结果覆盖新原文、跨会话混入及中文重复翻译。演示不需要麦克风。
@@ -70,7 +70,7 @@ APK：`app/build/outputs/apk/debug/app-debug.apk`。测试报告：`app/build/re
 
 ## 模型包协议
 
-ZIP 根目录必须有 `manifest.json`。ID 仅允许 `sensevoice`、`silero-vad`、`speaker`、`en-zh`、`ja-en`。以下是结构模板，必须用实际文件大小、SHA-256 和许可替换占位值，不能直接导入：
+ZIP 根目录必须有 `manifest.json`。ID 仅允许 `sensevoice`、`silero-vad`、`speaker`、`hy-mt2`。以下是结构模板，必须用实际文件大小、SHA-256 和许可替换占位值，不能直接导入：
 
 ```json
 {
@@ -93,29 +93,29 @@ ZIP 根目录必须有 `manifest.json`。ID 仅允许 `sensevoice`、`silero-vad
 | sensevoice | 根目录 `model.onnx`（SenseVoiceSmall INT8）、`tokens.txt` |
 | silero-vad | 根目录 `silero_vad.onnx`，16 kHz / window 512 的兼容模型 |
 | speaker | 根目录 `speaker.onnx`，sherpa 支持的 16 kHz speaker embedding 模型 |
-| en-zh / ja-en | 根目录 `model.*.bin`、`lex.*.bin`、一个共享 vocab `.spm` 或 src / trgvocab 文件，Foxlet Mozilla student 模型布局 |
+| hy-mt2 | 根目录 model.gguf，固定官方 STQ1_0 权重、SOURCE.json 与 LICENSE.txt，见 hymt-model.lock.json |
 
-前三个模型是生产采集启动的必需条件。翻译包缺失时原文仍可识别，但对应译文明确标不可用。取得并审核权重后，可用 `scripts/pack-model.ps1` 生成导入 ZIP；该脚本只读取源目录，不更改权重，按协议计算必要的模型 SHA-256，拒绝覆盖现有输出。许可及来源需显式提供，脚本不认证发布者或替代权重许可审查。
+前三个模型是生产采集启动的必需条件。Hy-MT2 包缺失时原文仍可识别，但对应译文明确标不可用。取得并审核权重后，可用 `scripts/pack-model.ps1` 生成导入 ZIP；该脚本只读取源目录，不更改权重，按协议计算必要的模型 SHA-256，拒绝覆盖现有输出。许可及来源需显式提供，脚本不认证发布者或替代权重许可审查。
 
 ```powershell
 ./scripts/pack-model.ps1 -Id sensevoice -SourceDirectory <audited-model-directory> -Version <version> -License <weight-license> -SourceURL <upstream-artifact-url> -OutputFile <new-output.zip>
 ```
 
-已锁定的英中 / 日英权重通过 `scripts/prepare-translation-models.ps1` 准备，ASR / VAD / CAM++ 通过 `scripts/prepare-speech-models.ps1` 准备；均在电脑下载校验并生成本地包，`-Offline` 仅用缓存并重新验证。默认 ASR 是三语 TTS auto 检查通过的官方 2024 原版；2025 粤语候选仅显式 opt-in，当前检查失败，不推荐作为生产导入基线。打包脚本保留根目录 LICENSE / NOTICE / COPYING / SOURCE 附带文件。真实五包主机导入需显式开启独立测试，普通回归不依赖缓存；完整命令、版本、许可与证据边界见 [14_MODEL_PREPARATION](14_MODEL_PREPARATION.md)。应用运行时仍不联网。
+当前翻译权重通过 `scripts/prepare-hymt-model.ps1` 准备，ASR / VAD / CAM++ 通过 `scripts/prepare-speech-models.ps1` 准备；均在电脑下载校验并生成本地包，`-Offline` 仅用缓存并重新验证。默认 ASR 是三语 TTS auto 检查通过的官方 2024 原版；2025 粤语候选仅显式 opt-in，当前检查失败，不推荐作为生产导入基线。打包脚本保留根目录 LICENSE / NOTICE / COPYING / SOURCE 附带文件。当前四包主机导入需显式开启独立测试，普通回归不依赖缓存；完整命令、版本、许可与证据边界见 [14_MODEL_PREPARATION](14_MODEL_PREPARATION.md)。应用运行时仍不联网。
 
 ## 设备验证入口
 
-`assembleDebugAndroidTest` 只构建测试 APK，不代表测试已运行。设备端 `NativeRuntimeSmokeTest` 检查固定版本 JNI 加载、无 INTERNET、Foxlet 无模型初始化/释放/再次初始化；执行时指定该类，避免误把需要权重的测试当成零配置 smoke。
+`assembleDebugAndroidTest` 只构建测试 APK，不代表测试已运行。设备端 `NativeRuntimeSmokeTest` 检查固定版本 JNI 加载、无 INTERNET、Hy JNI 加载及缺权重拒绝；执行时指定该类，避免误把需要权重的测试当成零配置 smoke。
 
 ```text
 ./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.jd.rc.localtranslate.NativeRuntimeSmokeTest
 ```
 
-`NativeModelTest` 需要先在应用导入已审核的三个语音包与 en-zh 包，并将公开、许可明确的单声道英语测试 WAV 放在目标应用私有目录；传入 `audioFile` 参数。支持 8–96 kHz 输入，最大 32 MiB / 90 秒；建议分别使用 16 / 44.1 / 48 kHz 公开录音。该测试按输入时间非阻塞投递到生产 DSP 前端，再经过 VAD / ASR / 翻译管线，检查英语原文、中文译文、原始及推理输入无丢帧、无语段丢弃、资源释放。缺前提会失败，不会悄悄 skip 并声称真实推理通过。它仍不能替代实际麦克风、中文/日文、声纹跨语言、折叠屏和热机验收。
+`NativeModelTest` 需要先在应用导入已审核的三个语音包与 Hy-MT2 包，并将公开、许可明确的单声道英语测试 WAV 放在目标应用私有目录；传入 `audioFile` 参数。支持 8–96 kHz 输入，最大 32 MiB / 90 秒；建议分别使用 16 / 44.1 / 48 kHz 公开录音。该测试按输入时间非阻塞投递到生产 DSP 前端，再经过 VAD / ASR / 翻译管线，检查英语原文、中文译文、原始及推理输入无丢帧、无语段丢弃、资源释放。缺前提会失败，不会悄悄 skip 并声称真实推理通过。它仍不能替代实际麦克风、中文/日文、声纹跨语言、折叠屏和热机验收。
 
 `scripts/verify-native.ps1` 检查打包 ARM64 库的 ELF PT_LOAD 与 APK 16 KB 对齐，不替代 16 KB 设备上的实际加载。
 
-NativeModelTest 在管线清理后导出 `diagnostics/native-model.json` 和 `.csv`，位于测试应用私有 files 目录，来源为 ANDROID_TEST_FIXTURE。预初始化失败尚不能产生完整管线报告；测试报告不携带 WAV、字幕或异常消息。每次覆盖本测试的两个固定报告，需在下一次运行前取回证据；当前设备测试仅编译，未实际生成真机数据。
+NativeModelTest 在管线清理后导出 `validation/diagnostics/native-model.json` 和 `.csv`，位于目标应用私有 files 目录，来源为 ANDROID_TEST_FIXTURE。预初始化失败尚不能产生完整管线报告；测试报告不携带 WAV、字幕或异常消息。每次覆盖本测试的两个固定报告，需在下一次运行前取回证据；当前设备测试仅编译，未实际生成真机数据。
 
 ## 下一步
 
@@ -129,3 +129,7 @@ NativeModelTest 在管线清理后导出 `diagnostics/native-model.json` 和 `.c
 ## GUI 性能工具入口
 
 独立性能测试模块的构建、API 31+ ARM64 真机运行及数据清除限制见 [17_BENCHMARK.md](17_BENCHMARK.md)。工具只用固定演示，不加载模型或打开麦克风，不能作为真实推理验收。
+
+Hy-MT2 模型准备：./scripts/prepare-hymt-model.ps1（离线缓存用 -Offline）。NativeHyTranslationTest 另需通过 -e modelPackage 传入目标 app 私有 ZIP 路径；实际经生产导入器加载 STQ 权重，验证中英日六向公开问候并重建 context，不涉及麦克风或 ASR。旧 Mozilla 准备命令保留为历史工具，当前不再接入。
+
+隔离 x86 模型验证构建：先 ./scripts/build-hymt-native.ps1 -Abi x86_64，再 ./scripts/build.ps1 -Tasks @(':app:assembleHyValidation', ':app:assembleHyValidationAndroidTest', '-PhyValidation=true')。测试应用 com.jd.rc.localtranslate.hyvalidation，不向普通包导入测试音频；NativeHyTranslationTest 的固定公开文本报告位于目标应用 files/validation/hy-public-fixtures.json。该配置不用于发布或手机性能结论。

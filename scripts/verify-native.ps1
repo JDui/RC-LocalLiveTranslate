@@ -17,6 +17,14 @@ try {
     foreach ($path in @('eigen/COPYING.MPL2.txt', 'kissfft/BSD-3-Clause.txt', 'NDK-r29-NOTICE.toolchain.txt')) {
         if (!$zip.GetEntry("assets/licenses/sherpa-dependencies/$path")) { throw "Missing native license: $path" }
     }
+    $hySource = $zip.GetEntry('assets/licenses/hymt/SOURCE.txt')
+    if (!$hySource) { throw 'Missing Hy-MT2 runtime source notice' }
+    $hyReader = [IO.StreamReader]::new($hySource.Open())
+    try { $hyInfo = $hyReader.ReadToEnd() | ConvertFrom-Json } finally { $hyReader.Dispose() }
+    if ($hyInfo.commit -cne '1e411d8f5a1e23525fa3265dfb4bd76265465397' -or $hyInfo.gpu -ne $false -or $hyInfo.network -ne $false) {
+        throw 'Unexpected Hy-MT2 runtime metadata'
+    }
+    if ($zip.Entries | Where-Object { $_.FullName -match '\.gguf$|libfoxlet|libbergamot' }) { throw 'Unexpected weights or retired translation engine in APK' }
     $libraries = @($zip.Entries | Where-Object { $_.FullName -match '^lib/.+\.so$' })
     if (!$libraries.Count) { throw 'APK contains no native libraries' }
     foreach ($entry in $libraries) {
@@ -25,6 +33,7 @@ try {
         $memory = [System.IO.MemoryStream]::new()
         try { $stream.CopyTo($memory); $bytes = $memory.ToArray() } finally { $stream.Dispose(); $memory.Dispose() }
         if ($entry.FullName -eq 'lib/arm64-v8a/libsherpa-onnx-jni.so') { $jniBytes = $bytes }
+        if ($entry.FullName -eq 'lib/arm64-v8a/librc_hymt.so') { $hyBytes = $bytes }
         Assert-Arm64Elf16Kb -Bytes $bytes -Name $entry.FullName
     }
 } finally { $zip.Dispose() }
@@ -47,6 +56,17 @@ try {
         if (!($symbols | Select-String "Java_com_k2fsa_sherpa_onnx_${name}_newFromFile$")) { throw "APK missing required JNI: $name" }
     }
     Write-Output 'APK no-TTS / required JNI / source inventory PASS'
+    if (!$hyBytes) { throw 'Missing Hy-MT2 JNI' }
+    $hyExtracted = Join-Path $temporary 'librc_hymt.so'
+    [IO.File]::WriteAllBytes($hyExtracted, $hyBytes)
+    try {
+        $hySymbols = & $nm -D --defined-only $hyExtracted
+        if ($LASTEXITCODE -ne 0) { throw 'Hy-MT2 symbol inspection failed' }
+        foreach ($name in @('create', 'generate', 'release')) {
+            if (!($hySymbols | Select-String "Java_com_jd_rc_localtranslate_inference_HyNative_${name}$")) { throw "Missing Hy-MT2 JNI: $name" }
+        }
+        Write-Output 'APK Hy-MT2 JNI / fixed STQ source inventory PASS'
+    } finally { Remove-Item -LiteralPath $hyExtracted }
 } finally {
     if (Test-Path -LiteralPath $extracted) { Remove-Item -LiteralPath $extracted }
     Remove-Item -LiteralPath $temporary

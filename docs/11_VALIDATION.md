@@ -2,6 +2,42 @@
 
 日期：2026-10-09 至 2026-10-12（Asia/Shanghai）。当前源码为 Android 0.1.0-prealpha.2；各阶段旧数据明确保留，不将旧版本检查当作新制品证据。
 
+## Hy-MT2 1.8B 1.25-bit 转向
+
+2026-10-12 按用户选择，当前开发源码移除 Foxlet AAR / 英语中转路由，使用固定腾讯 Hy-MT2 STQ1_0 权重，英→中和日→中共用一个模型；M2M100 中间改动已撤回，没有进入当前源码。权重不随 APK / Git 分发。旧公开 prealpha.2 保持不变。运行库和两个兼容适配见 ADR-0006。
+
+真实模型准备与生产导入包校验通过：原始权重 461,860,800 bytes（440.5 MiB），ZIP 456,262,159 bytes（435.1 MiB），固定发布者 LFS SHA-256、Apache-2.0 全文和 SOURCE 均登记。独立 PreparedModelImportTest 实际执行：1 项、0 failures / errors / skipped，20.028s；Gradle BUILD SUCCESSFUL in 48s，四包导入、Hy 身份和大小、租约禁止删除 / 替换、释放后清理通过。此项不调用 JNI。
+
+普通主机回归实际执行：150 项、0 failures / errors / skipped，包含新增 HyTranslatorTest 4 项（UTF-8 / lazy 复用、输入界限、非译文拒绝、取消时等待同步调用完成再释放）。首次完整 Debug / instrumentation APK / 普通测试 / lint 构建 BUILD SUCCESSFUL in 2m 10s。最终 ARM64 Debug / Release / instrumentation APK / lint 构建 BUILD SUCCESSFUL in 1m 59s、126 tasks / 48 executed；不把这个命令当作重复执行普通测试。最终 lint 为 0 errors / 13 warnings，保留依赖更新等提示与 Kotlin Gradle 未来弃用提示。
+
+最终 Debug 99,969,288 bytes（95.3 MiB），Release unsigned 78,877,102 bytes（75.2 MiB），不含权重。两 APK 三库 ARM64 ELF / ZIP 16 KB、固定 STQ SOURCE 和 create / generate / release JNI、无退休 Foxlet 引擎均 PASS。签名发行未执行。新模型页的实际 Android 截图 `25-hymt-models.png`、`26-hymt-installed.png` 已人工检查，显示 1/4、440 MB 的二进制取整值、固定模型身份 / 许可和本地导入入口。
+
+真实设备测试使用前述单个 API 35 / 2 核 / 2 GiB 模拟器。最终 ARM 转译 APK 的 NativeRuntimeSmokeTest 返回 OK (2 tests)，sherpa/ONNX 无联网权限与版本、Hy JNI 缺文件拒绝均通过。真实权重初次加载失败：官方 GGUF 存储 type=42 被 PR 解释为 Q2_0，offset mismatch；已通过只作用于该模型的 reader 适配修复。旧内置 Hunyuan template 顺序亦与固定 GGUF 不同，改为官方单 user 模板。原始权重字节与上游 checkout 不变。修复后 ARM 转译能初始化，但真实生成测试超过 CPU deadline，测试失败、墙钟 127.132s；不能据此报告 ARM 推理通过或手机速度。
+
+同一模拟器的隔离 x86 构建 `com.jd.rc.localtranslate.hyvalidation`，显式 `-PhyValidation=true`，不进入正式 ARM64 APK。NativeHyTranslationTest 经生产导入器加载真实 STQ 权重，分别运行固定公开 `Good morning.` / `おはようございます。` 并逐次释放 / 重建 context，中文问候语断言通过，首次 OK (1 test)、46.097s；此耗时包含导入、加载与测试，不是译文延迟。新增公开样本报告首次因测试 APK 私有目录不可写而失败，修正为目标应用 `files/validation/`；最终带报告复验 OK (1 test)、50.843s；两句实际译文均为“早上好。”。JSON 的含加载总处理耗时分别 18,398 / 21,289 ms，不当作手机性能。原始记录为 `.tools/emulator-validation/hymt-public-fixture-tests.txt` / `hymt-public-fixtures.json`。
+
+证据目录 `.tools/emulator-validation/`：`hymt-final-arm-smoke.txt`、`hymt-x86-translation.txt`、`hymt-public-fixture-tests.txt`、两份 final alignment、公开样本 JSON；150 项 XML 副本在 `.tools/hymt-unit-results/`。构建日志 `.tools/hymt-app-build.log` / `hymt-final-build.log`，模型准备日志 `.tools/hymt-model-preparation.log`。所有模型、测试中间制品和日志留在忽略目录。
+
+仍未验收：真实 ARM 手机模型推理、中英日真实音频到字幕的完整链路、CER/WER / 翻译质量、手机峰值内存、实际延迟、热机与电池。两句公开文字的 x86 结果不能替代这些门禁。STQ PR 尚未合并，固定依赖属于实验接入。
+
+最后的 ARM64 instrumentation APK 已补编译报告路径修正，BUILD SUCCESSFUL in 29s。结束时 crash buffer 为空，已卸载隔离 x86 应用 / 测试包，删除普通测试应用内暂存 ZIP 并关闭模拟器；生产导入的 Hy 权重保留。未提交、推送或发布新版本。
+
+## 最小 Android 模拟器功能与 GUI 检查
+
+同传管线补验（2026-10-12）：实际执行 `:app:testDebugUnitTest --tests com.jd.rc.localtranslate.RealtimePipelineTest --tests com.jd.rc.localtranslate.SubtitleReducerTest --no-daemon --max-workers=2`，BUILD SUCCESSFUL in 30s，31 tasks / 1 executed。RealtimePipelineTest 18 项、14.070s；SubtitleReducerTest 8 项、0.021s；共 26 项，0 failures / errors / skipped。覆盖最终识别 / 译文 / Speaker 回填、暂停恢复、缺译文、时间连续性、过载与压力降级、资源释放、旧会话和旧 revision 隔离；识别和翻译后端是 fake，不加载权重。原始日志 `.tools/emulator-validation/translation-pipeline-test.log` 与两份 TEST XML 已保留。本次没有执行 NativeModelTest，不能据此宣称真实同传已跑通。
+
+2026-10-12 使用一个项目内 AVD：Android 15 / API 35 Google APIs x86_64，720 × 1280 px、320 dpi（360 × 640 dp）、2 核、2048 MB RAM、无窗口、无快照、无音频、SwiftShader。WHPX 检查可用；设备报告 `x86_64,arm64-v8a` 和 `libndk_translation.so`。镜像和工具在 Git 忽略的 `.tools` 内，不安装 Android Studio；结束后关闭模拟器。
+
+首次 Debug / 设备测试 APK 构建 BUILD SUCCESSFUL in 33s，67 tasks、2 executed / 65 up-to-date。应用与测试 APK 实际安装成功；指定 NativeRuntimeSmokeTest 的 instrumentation 返回 OK (2 tests)：sherpa 1.13.8 / ONNX Runtime 1.28.2 和无网络权限断言通过，Foxlet 无模型创建 / 释放 / 重建通过。这是 ARM 转译模拟器加载证据，不是真实 ARM64 手机或实际模型推理。
+
+ADB UI hierarchy、实际点击、Android screencap 与人工图像检查覆盖：四页导航、麦克风权限拒绝、授权后缺 SenseVoice 模型错误、演示播放 / 暂停 / 继续 / 停止、演示记录详情、JSON 导出格式弹窗、系统 SAF 保存及本地取回、模型导入 SAF 打开 / 取消、深色和双语开关在 force-stop 重启后保留。取回 JSON 1326 bytes、3 个演示 segment，检查语言、原文、译文、Speaker、revision 和采样时间字段；没有私人音频或对话。未执行模型导入和真实采集。
+
+发现 360 × 640 dp 空字幕宣传块裁切，权限拒绝时更严重；640 × 360 dp 横屏侧栏只能访问前两页。按用户要求移除英文副标题、宣传语、重复说明和技术装饰文案，空字幕改为短状态；侧栏增加滚动。修改后构建及 ComposeUiTest / ActivityLifecycleUiTest 定向回归 BUILD SUCCESSFUL in 1m 5s，33 tests、0 failures / errors / skipped，测试实际执行。首次沙箱构建因 Kotlin daemon / kapt 缓存权限失败；获准使用本机工具权限后通过，保留日志。不同工具权限环境生成了不同 Debug 签名，更新安装被拒绝；仅卸载专用模拟器中的测试应用后重装，没有用户设备数据。
+
+新版重新安装后，竖屏暂无字幕和权限错误均完整显示，演示暂停 / 停止与记录保存通过；横屏可滚动到设置并打开，四个导航入口可达。200% 字体下停止 / 继续及四页导航可达，但 360 × 640 dp 的字幕窗口很小，只能显示语段头部，仍需滚动阅读；不据此宣称大字体布局全部验收。截图和 UI XML 位于 `.tools/emulator-validation/`，新版 `16-clean-live.png`、`18-landscape-navigation.png`、`20-clean-settings.png`、`21-clean-permission-denied.png`、`23-clean-font200.png` 已人工检查；最终 crash buffer 未返回崩溃记录。
+
+本轮没有 Macrobenchmark、实际权重、语音准确率、实体折叠、蓝牙、后台录音、OEM、热机或性能验收。下方旧阶段的“无设备测试证据”保留为历史记录，本节仅补充模拟器证据。
+
 ## GUI 基准工具构建（未随 prealpha.2 发布）
 
 2026-10-12 新增独立 Macrobenchmark 及三个设备用例。完整 Debug / Release / 普通测试 / lint / 设备测试 APK / benchmark target lint / benchmark 双 APK 命令 BUILD SUCCESSFUL in 2m 28s；现有普通报告仍为 146 项、0 failures / errors / skipped，不把缓存命中当作重新执行。主用户保护首次使用非公开 SDK 的 `UserHandle.of` 导致编译失败，改为公开的 `getUserHandleForUid` 后工具重编译 BUILD SUCCESSFUL in 17s，实际执行 compileBenchmarkKotlin。任务列表确认 `connectedBenchmarkAndroidTest` 存在，但未执行设备测试。
@@ -199,3 +235,27 @@ NDK 29.0.14206865 / CMake 3.22.1 / Clang 21.0.0 从固定 sherpa 提交完成 AR
 - 未进行 Android 9–17 设备矩阵、16 KB page size 实机兼容、飞行模式真实推理、PSS/RTF/延迟、30–60 分钟热机或电池测试。
 - GitHub Actions 的主机 / 构建流程通过；没有 Android 设备测试证据。
 - prealpha 已公开；未替仓库所有者指定源码许可证，未完成独立权重与题材权利审核。
+
+## 2026-10-12 双向语言选择
+
+- 新增译中文 / 中日 / 中英 / 英日菜单。154 项主机测试通过，0 失败/错误；涵盖六向路由、第三语言原文保留、Speaker 跨语言不变、修订隔离、设置与目标语言 JSON 持久化、原生目标参数和 Compose 菜单。
+- ARM64 Debug 构建与 lint 通过，lint 0 错误 / 13 警告；主机构建用时 1m28s。APK 原生符号、来源清单、ELF / ZIP 16 KB 对齐检查通过。
+- 最小 API35 模拟器仍为 2 核 / 2048 MiB / 360×640 dp。实际菜单三种组合切换、活动会话禁用选择、重启后保留中日均通过；中日的日语→中文和中文→日语演示画面已检查。截图 `.tools/emulator-validation/28-language-pairs-menu.png`、`32-language-pairs-subtitles.png`、`34-language-pairs-zh-ja-visible.png`；演示不是推理证据。
+- 隔离 x86_64 HyValidation 构建通过，59s；实际导入固定 STQ 权重后，六向 JNI 翻译 + 每次释放/重建 context 通过，1 项 instrumentation 测试共 107.464s。结果 `.tools/emulator-validation/hymt-six-directions.json`，原始日志 `pairs-native-test.log`。
+
+| 源语言 | 目标语言 | 固定公开输入 | 实际输出 |
+| --- | --- | --- | --- |
+| EN | ZH | Good morning. | 早上好。 |
+| JA | ZH | おはようございます。 | 早上好。 |
+| ZH | JA | 早上好。 | おはようございます。 |
+| EN | JA | Good morning. | おはようございます。 |
+| ZH | EN | 早上好。 | Good morning. |
+| JA | EN | おはようございます。 | Good morning. |
+
+每条加载 + 翻译 15.376–17.352 秒，仅为该 x86 模拟器的公开短句结果，包含模型加载，不能视为手机实时延迟、长文质量或 ASR 全链路证据。ARM64 真机速度与真实麦克风三语会话仍未验收。测试后删除隔离验证应用及模型副本，保留产品应用和截图/公开结果，关闭模拟器。
+
+## 2026-10-12 prealpha.3 发行构建
+
+- 版本 0.1.0-prealpha.3 / versionCode 3。Release、DebugAndroidTest、lintRelease 构建通过，1m51s；lint 0 errors / 13 warnings。功能测试沿用本次改动的 154 项主机与六向真实模型模拟器结果。
+- 签名 APK `RC-LocalLiveTranslate-0.1.0-prealpha.3-arm64.apk`：78,918,270 bytes。apksigner 验证通过，与前两版证书一致；ELF / ZIP 16 KB 对齐、必需 JNI / 原生来源 / 无 TTS 检查通过。权重、签名材料、录音与私密日志不提交或发布。
+- 使用隔离 userdata 的最小 API35 模拟器先安装签名 prealpha.2，再以 `install -r` 覆盖安装签名 prealpha.3，均成功；实际启动界面与 versionCode 3 / versionName 已核对，crash buffer 为空。截图 `.tools/emulator-validation/35-prealpha3-release-startup.png`。未执行真实手机升级或带已有模型/历史的大数据升级。

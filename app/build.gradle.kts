@@ -5,6 +5,13 @@ plugins {
     kotlin("kapt")
 }
 android {
+    val hyValidation = providers.gradleProperty("hyValidation").orNull == "true"
+    if (hyValidation) {
+        require(gradle.startParameter.taskNames.all { it.contains("HyValidation") }) {
+            "The x86 validation configuration only accepts explicit HyValidation tasks"
+        }
+    }
+    testBuildType = if (hyValidation) "hyValidation" else "debug"
     namespace = "com.jd.rc.localtranslate"
     compileSdk = 36
     ndkVersion = "29.0.14206865"
@@ -12,13 +19,19 @@ android {
         applicationId = "com.jd.rc.localtranslate"
         minSdk = 28
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.1.0-prealpha.2"
-        ndk { abiFilters += "arm64-v8a" }
+        versionCode = 3
+        versionName = "0.1.0-prealpha.3"
+        ndk { abiFilters += if (hyValidation) "x86_64" else "arm64-v8a" }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { compose = true }
     buildTypes {
+        create("hyValidation") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".hyvalidation"
+            matchingFallbacks += "debug"
+            ndk { abiFilters += "x86_64" }
+        }
         create("benchmark") {
             initWith(getByName("release"))
             applicationIdSuffix = ".benchmark"
@@ -29,8 +42,10 @@ android {
     sourceSets["main"].apply {
         java.srcDir(rootProject.file(".tools/native/sherpa/kotlin"))
         jniLibs.srcDir(rootProject.file(".tools/native/sherpa/jniLibs"))
+        jniLibs.srcDir(rootProject.file(".tools/native/hymt/jniLibs"))
         assets.srcDir(rootProject.file(".tools/native/assets"))
     }
+    sourceSets["hyValidation"].jniLibs.srcDir(rootProject.file(".tools/native/hymt-validation/jniLibs"))
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -52,7 +67,6 @@ android {
 }
 kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) } }
 dependencies {
-    implementation(files(rootProject.file(".tools/native/foxlet-v0.5.0.aar")))
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
     implementation(libs.compose.preview)

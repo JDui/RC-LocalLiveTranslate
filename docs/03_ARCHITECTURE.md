@@ -14,7 +14,7 @@
 | :core:audio | AudioRecord、PCM、resampler、RingBuffer |
 | :core:asr | SpeechRecognizer、LID、SenseVoice 适配 |
 | :core:speaker | EmbeddingExtractor、SpeakerTracker、时间窗修订 |
-| :core:translate | Translator 接口、Foxlet 桥、语言路由 |
+| :core:translate | Translator 接口、Hy-MT2 STQ JNI、语言路由 |
 | :core:pipeline | 有界通道、任务取消、修订合并、回压 |
 | :core:model | 模型清单、哈希/安装/卸载 |
 | :core:data | Room、DataStore、SRT/JSON |

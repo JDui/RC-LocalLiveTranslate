@@ -1,6 +1,19 @@
 package com.jd.rc.localtranslate.core
 
 enum class SourceLanguage(val label: String) { ZH("中文"), EN("English"), JA("日本語"), UNKNOWN("未知语言") }
+enum class TranslationMode(val label: String, private val first: SourceLanguage?, private val second: SourceLanguage?) {
+    TO_ZH("译中文", null, SourceLanguage.ZH),
+    ZH_JA("中日", SourceLanguage.ZH, SourceLanguage.JA),
+    ZH_EN("中英", SourceLanguage.ZH, SourceLanguage.EN),
+    EN_JA("英日", SourceLanguage.EN, SourceLanguage.JA);
+    fun target(source: SourceLanguage): SourceLanguage? = when {
+        source == SourceLanguage.UNKNOWN -> null
+        first == null -> second.takeUnless { source == it }
+        source == first -> second
+        source == second -> first
+        else -> null
+    }
+}
 enum class CaptionStage(val label: String) { PARTIAL("识别中"), FINAL("已确认"), REVISED("已修订") }
 enum class TranslationStatus { WAITING, COMPLETE, NOT_REQUIRED, UNAVAILABLE }
 
@@ -18,6 +31,7 @@ data class SubtitleItem(
     val translationStatus: TranslationStatus = TranslationStatus.WAITING,
     val speakerRevision: Int = -1,
     val translationRevision: Int = -1,
+    val targetLanguage: SourceLanguage? = TranslationMode.TO_ZH.target(sourceLanguage),
 ) {
     val elapsedSeconds: Long get() = startSample / 16_000
 }
@@ -42,7 +56,7 @@ sealed interface SubtitleEvent {
 }
 
 /** Independent revision counters prevent late speaker results from replacing newer text. */
-class SubtitleReducer(private val sessionId: String) {
+class SubtitleReducer(private val sessionId: String, private val mode: TranslationMode = TranslationMode.TO_ZH) {
     private val items = linkedMapOf<String, SubtitleItem>()
     private val pendingSpeakers = mutableMapOf<String, SubtitleEvent.Speaker>()
     private val pendingTranslations = mutableMapOf<String, SubtitleEvent.Translation>()
@@ -87,18 +101,19 @@ class SubtitleReducer(private val sessionId: String) {
                 val speaker = pendingSpeakers.remove(event.segmentId)
                 val translation = pendingTranslations.remove(event.segmentId)
                 val base = old ?: SubtitleItem(sessionId, event.segmentId, event.startSample, event.endSample)
+                val target = mode.target(event.language)
                 val translated = translation?.takeIf { it.revision == event.revision &&
-                    event.language != SourceLanguage.UNKNOWN && event.language != SourceLanguage.ZH }
+                    target != null }
                 items[event.segmentId] = base.copy(
                     startSample = event.startSample, endSample = event.endSample,
-                    revision = event.revision, sourceLanguage = event.language,
+                    revision = event.revision, sourceLanguage = event.language, targetLanguage = target,
                     sourceText = event.text, stage = event.stage,
                     speakerId = speaker?.speakerId ?: base.speakerId,
                     speakerRevision = speaker?.revision ?: base.speakerRevision,
-                    targetText = if (event.language == SourceLanguage.ZH) "" else translated?.text ?: "",
+                    targetText = translated?.text ?: "",
                     translationRevision = translated?.revision ?: -1,
                     translationStatus = when {
-                        event.language == SourceLanguage.ZH -> TranslationStatus.NOT_REQUIRED
+                        event.language != SourceLanguage.UNKNOWN && target == null -> TranslationStatus.NOT_REQUIRED
                         translated != null -> translated.status
                         event.language == SourceLanguage.UNKNOWN -> TranslationStatus.UNAVAILABLE
                         else -> TranslationStatus.WAITING
@@ -120,7 +135,7 @@ class SubtitleReducer(private val sessionId: String) {
                 if (old == null || event.revision > old.revision) {
                     if (event.revision > (pendingTranslations[event.segmentId]?.revision ?: -1)) pendingTranslations[event.segmentId] = event
                 } else if (event.revision == old.revision && event.revision > old.translationRevision &&
-                    old.sourceLanguage != SourceLanguage.ZH && old.sourceLanguage != SourceLanguage.UNKNOWN) {
+                    old.targetLanguage != null) {
                     items[event.segmentId] = old.copy(targetText = event.text, translationRevision = event.revision,
                         translationStatus = event.status)
                 }

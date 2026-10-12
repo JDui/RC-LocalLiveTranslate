@@ -3,7 +3,7 @@ package com.jd.rc.localtranslate
 import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import com.jd.rc.localtranslate.model.*
-import com.jd.rc.localtranslate.inference.resolveTranslationModel
+import com.jd.rc.localtranslate.model.HyModelProfile
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
@@ -85,14 +85,15 @@ class ModelImportTest {
         assertTrue(runCatching { repository.acquire() }.isFailure)
         assertFalse(repository.state.value.inUse)
     }
-    @Test fun translationHashesExcludePackagedLicenseAndDeduplicateSharedVocab() {
-        val dir = File(context.cacheDir, "translation-fixture").apply { mkdirs() }
-        val names = listOf("model.enzh.test.bin", "lex.enzh.test.bin", "vocab.enzh.spm", "LICENSE.txt")
-        val files = names.associateWith { File(dir, it).apply { writeText("abc") } }
-        val hashes = names.associateWith { "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" }
-        val model = resolveTranslationModel(ModelBundle("en-zh", dir, files, hashes), "en", "zh-Hans")
-        assertEquals(names.take(3).toSet(), model.files.expectedSha256.keys)
-        assertEquals("zh-Hans", model.pair.target)
-        assertEquals(model.files.srcVocab, model.files.trgVocab)
+    @Test fun hyProfileRejectsUnregisteredWeightsAndQuantization() {
+        val manifest = JSONObject().put("version", HyModelProfile.VERSION).put("license", "Apache-2.0")
+            .put("quantization", "STQ1_0").put("files", JSONArray().put(JSONObject().put("path", "model.gguf")
+                .put("size", HyModelProfile.SIZE).put("sha256", HyModelProfile.SHA256)))
+        HyModelProfile.validate(manifest)
+        manifest.put("quantization", "Q4_K")
+        assertThrows(IllegalArgumentException::class.java) { HyModelProfile.validate(manifest) }
+        manifest.put("quantization", "STQ1_0")
+        manifest.getJSONArray("files").getJSONObject(0).put("sha256", "0".repeat(64))
+        assertThrows(IllegalArgumentException::class.java) { HyModelProfile.validate(manifest) }
     }
 }

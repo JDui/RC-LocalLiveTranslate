@@ -5,14 +5,6 @@ import com.jd.rc.localtranslate.core.SourceLanguage
 import com.jd.rc.localtranslate.model.ModelLease
 import com.jd.rc.localtranslate.model.ModelBundle
 import com.k2fsa.sherpa.onnx.*
-import io.github.yinvoker.foxlet.ExternalModel
-import io.github.yinvoker.foxlet.Foxlet
-import io.github.yinvoker.foxlet.FoxletConfig
-import io.github.yinvoker.foxlet.LanguagePair
-import io.github.yinvoker.foxlet.ModelFiles
-import io.github.yinvoker.foxlet.ModelRetention
-import io.github.yinvoker.foxlet.Threading
-import io.github.yinvoker.foxlet.TranslationConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
@@ -22,13 +14,6 @@ import kotlinx.coroutines.ensureActive
 data class RecognizedSpeech(val text: String, val language: SourceLanguage)
 data class DetectedSpeech(val start: Int, val samples: FloatArray)
 
-internal fun resolveTranslationModel(bundle: ModelBundle, source: String, target: String): ExternalModel {
-    val files = ModelFiles.fromDirectory(bundle.directory)
-    val modelAssets = listOf(files.model, files.srcVocab, files.trgVocab, files.shortlist).distinct()
-    val hashes = modelAssets.associate { it.name to bundle.hashes.getValue(it.name) }
-    return ExternalModel(LanguagePair(source, target), files.copy(expectedSha256 = hashes))
-}
-
 interface SpeechEngines {
     fun acceptVad(samples: FloatArray)
     fun speechDetected(): Boolean
@@ -37,7 +22,7 @@ interface SpeechEngines {
     fun resetVad()
     fun recognize(samples: FloatArray): RecognizedSpeech
     fun embedding(samples: FloatArray): FloatArray?
-    suspend fun translate(text: String, language: SourceLanguage): String?
+    suspend fun translate(text: String, language: SourceLanguage, target: SourceLanguage = SourceLanguage.ZH): String?
     fun releaseSpeaker() {}
     suspend fun releaseTranslation() {}
     suspend fun close()
@@ -45,9 +30,9 @@ interface SpeechEngines {
 
 class NativeEngines private constructor(private val lease: ModelLease, private val vad: Vad,
     private val recognizer: OfflineRecognizer, private val context: Context,
-    private val english: ExternalModel?, private val japanese: ExternalModel?) : SpeechEngines {
+    private val translationModel: ModelBundle?) : SpeechEngines {
     private var speaker: SpeakerEmbeddingExtractor? = null
-    private var foxlet: Foxlet? = null
+    private var translator: HyTranslator? = null
     override fun acceptVad(samples: FloatArray) = vad.acceptWaveform(samples)
     override fun speechDetected() = vad.isSpeechDetected()
     override fun takeSegments(): List<DetectedSpeech> = buildList {
@@ -76,30 +61,20 @@ class NativeEngines private constructor(private val lease: ModelLease, private v
             return if (extractor.isReady(stream)) extractor.compute(stream) else null
         } finally { stream.release() }
     }
-    override suspend fun translate(text: String, language: SourceLanguage): String? {
-        val en = english ?: return null
-        if (language == SourceLanguage.UNKNOWN) return null
-        if (language == SourceLanguage.ZH) return ""
-        if (language == SourceLanguage.JA && japanese == null) return null
-        val client = foxlet ?: withContext(NonCancellable + Dispatchers.IO) {
-            Foxlet.create(context, FoxletConfig(translation = TranslationConfig(
-                threading = Threading.Fixed(1), retention = ModelRetention.AfterRequest))).also { foxlet = it }
-        }
-        currentCoroutineContext().ensureActive()
-        return when (language) {
-            SourceLanguage.EN -> client.translator.translate(text, en)
-            SourceLanguage.JA -> japanese?.let { client.translator.translatePivot(text, it, en) }
-            SourceLanguage.ZH -> ""
-            SourceLanguage.UNKNOWN -> null
-        }
+    override suspend fun translate(text: String, language: SourceLanguage, target: SourceLanguage): String? {
+        if (language == target) return ""
+        if (language == SourceLanguage.UNKNOWN || target == SourceLanguage.UNKNOWN) return null
+        val model = translationModel ?: return null
+        val client = translator ?: HyTranslator(model.required("model.gguf")).also { translator = it }
+        return client.translate(text, target)
     }
     override fun releaseSpeaker() {
         val current = speaker; speaker = null
         current?.release()
     }
     override suspend fun releaseTranslation(): Unit = withContext(NonCancellable + Dispatchers.IO) {
-        val current = foxlet; foxlet = null
-        current?.shutdown()
+        val current = translator; translator = null
+        current?.close()
     }
     override suspend fun close() {
         withContext(NonCancellable + Dispatchers.IO) {
@@ -123,12 +98,7 @@ class NativeEngines private constructor(private val lease: ModelLease, private v
                     recognizer = OfflineRecognizer(config = OfflineRecognizerConfig(modelConfig = OfflineModelConfig(
                         senseVoice = OfflineSenseVoiceModelConfig(model = asr.required("model.onnx").path, language = "auto"),
                         tokens = asr.required("tokens.txt").path, numThreads = 2, modelType = "sense_voice")))
-                    fun translation(id: String, source: String, target: String) = bundles[id]?.let {
-                        resolveTranslationModel(it, source, target)
-                    }
-                    val english = translation("en-zh", "en", "zh-Hans")
-                    val japanese = translation("ja-en", "ja", "en")
-                    NativeEngines(lease, vad, recognizer, context.applicationContext, english, japanese)
+                    NativeEngines(lease, vad, recognizer, context.applicationContext, bundles["hy-mt2"])
                 }
             } catch (error: Throwable) {
                 withContext(NonCancellable + Dispatchers.IO) {
