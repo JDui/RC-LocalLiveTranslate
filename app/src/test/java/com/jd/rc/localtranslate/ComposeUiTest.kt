@@ -8,6 +8,9 @@ import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.*
@@ -306,6 +309,36 @@ class ComposeUiTest {
         assertTrue(compose.onNodeWithText("双语字幕").fetchSemanticsNode().boundsInRoot.bottom < 440)
         assertTrue(compose.onNodeWithText("省电").fetchSemanticsNode().boundsInRoot.top > 460)
     }
+    @Test @Config(qualifiers = "w900dp-h900dp-mdpi") fun tabletopModelsKeepImportsWithinTheirPanes() {
+        render("models-tabletop", Page.MODELS,
+            folds = listOf(WindowFold(IntRect(0, 440, 900, 460), FoldAxis.HORIZONTAL, true, true)))
+        compose.onNodeWithText("SenseVoice Small").assertIsDisplayed()
+        compose.onNodeWithText("English → 中文").assertIsDisplayed()
+        assertTrue(compose.onNodeWithText("SenseVoice Small").fetchSemanticsNode().boundsInRoot.bottom < 440)
+        assertTrue(compose.onNodeWithText("English → 中文").fetchSemanticsNode().boundsInRoot.top > 460)
+        compose.onNodeWithContentDescription("导入模型包").assertIsDisplayed()
+        assertTrue(compose.onNodeWithContentDescription("导入模型包").fetchSemanticsNode().boundsInRoot.bottom < 440)
+        compose.onNodeWithText("从本地导入").performScrollTo().assertIsDisplayed()
+        assertTrue(compose.onNodeWithText("从本地导入").fetchSemanticsNode().boundsInRoot.top > 460)
+        snapshot("models-tabletop-import")
+    }
+    @Test @Config(qualifiers = "w900dp-h900dp-mdpi") fun tabletopSessionSelectionKeepsReadingAndActionsBelowHinge() {
+        compose.setContent {
+            GlassTheme(UserSettings()) {
+                FoldAppShell(listOf(WindowFold(IntRect(0, 440, 900, 460), FoldAxis.HORIZONTAL, true, true)),
+                    Modifier.fillMaxSize(), navigation = { GlassNavigation(Page.SESSIONS, it) {} }) {
+                    SessionsScreen(longSessions(), UserSettings(), { _, _ -> }, {}, { _, _, _ -> })
+                }
+            }
+        }
+        compose.onNodeWithContentDescription("打开会话 Record 2").performClick().assertIsSelected()
+        compose.onNodeWithTag("session-captions").performScrollToIndex(5)
+        compose.onNodeWithText("Record 2 Line 5").assertIsDisplayed()
+        assertTrue(compose.onNodeWithTag("sessions-list").fetchSemanticsNode().boundsInRoot.bottom < 440)
+        assertTrue(compose.onNodeWithTag("session-captions").fetchSemanticsNode().boundsInRoot.top > 460)
+        compose.onNodeWithContentDescription("导出").assertIsDisplayed()
+        snapshot("sessions-tabletop-selected")
+    }
     private fun longSessions() = (1..2).map { number ->
         val rows = (0 until 40).map { captions[0].copy(segmentId = "$number-$it", sourceText = "Record $number Line $it", targetText = "") }
         SavedSession("record-$number", "Record $number", number.toLong(), 160, false, CaptionJson.encode(rows))
@@ -353,6 +386,31 @@ class ComposeUiTest {
         compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
         compose.onNodeWithContentDescription("打开会话 Record 2").assertIsDisplayed()
         compose.onNodeWithTag("session-captions").assertDoesNotExist()
+    }
+    @Test fun restoredReadingPositionSurvivesDelayedSessionLoad() {
+        val restoration = StateRestorationTester(compose)
+        var delayLoad = false
+        var rows: MutableState<List<SavedSession>>? = null
+        restoration.setContent {
+            // Change only the next composition's initial data, after saving the old state.
+            val loaded = remember { mutableStateOf(if (delayLoad) emptyList() else longSessions()) }
+            SideEffect { rows = loaded }
+            GlassTheme(UserSettings()) {
+                FoldAppShell(emptyList(), Modifier.fillMaxSize(), navigation = { GlassNavigation(Page.SESSIONS, it) {} }) {
+                    SessionsScreen(loaded.value, UserSettings(), { _, _ -> }, {}, { _, _, _ -> })
+                }
+            }
+        }
+        compose.onNodeWithContentDescription("打开会话 Record 2").performClick()
+        compose.onNodeWithTag("session-captions").performScrollToIndex(15)
+        compose.onNodeWithText("Record 2 Line 15").assertIsDisplayed()
+        val position = compose.onNodeWithText("Record 2 Line 15").fetchSemanticsNode().boundsInRoot.top
+        delayLoad = true
+        restoration.emulateSavedInstanceStateRestore()
+        compose.onNodeWithTag("session-captions").assertDoesNotExist()
+        compose.runOnIdle { requireNotNull(rows).value = longSessions() }
+        compose.onNodeWithText("Record 2 Line 15").assertIsDisplayed()
+        assertEquals(position, compose.onNodeWithText("Record 2 Line 15").fetchSemanticsNode().boundsInRoot.top, 1f)
     }
     @Test @Config(qualifiers = "w900dp-h900dp-mdpi") fun largeFontFoldSettingsKeepPrivacyAndPerformanceIndependent() {
         val settings = mutableStateOf(UserSettings(keepSessions = false))

@@ -1,5 +1,5 @@
 #requires -Version 7.0
-param([string]$Version = '0.1.0-prealpha.1', [string]$Apk = '')
+param([string]$Version = '0.1.0-prealpha.2', [string]$Apk = '')
 $ErrorActionPreference = 'Stop'
 if ($Version -notmatch '^\d+\.\d+\.\d+-prealpha\.\d+$') { throw 'An explicit prealpha version is required' }
 $root = Split-Path $PSScriptRoot -Parent

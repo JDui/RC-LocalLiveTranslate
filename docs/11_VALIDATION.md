@@ -1,6 +1,16 @@
 # 0.1.0 验证记录
 
-日期：2026-10-09 至 2026-10-12（Asia/Shanghai）。验证对象为当前本地工作区的 Android 0.1.0-prealpha.1；各阶段旧数据明确保留。
+日期：2026-10-09 至 2026-10-12（Asia/Shanghai）。当前源码为 Android 0.1.0-prealpha.2；各阶段旧数据明确保留，不将旧版本检查当作新制品证据。
+
+## prealpha.2 恢复与 tabletop 回归
+
+2026-10-12 新增 tabletop Models / Sessions、延迟记录载入恢复、生产 MainActivity 重建共 4 项主机回归。普通总数 146，0 failures / 0 errors / 0 skipped；完整 Debug / Release / 普通测试 / 两类 lint / 设备测试 APK 命令 BUILD SUCCESSFUL in 2m 2s，普通测试实际执行。Debug / Release lint 各 0 errors / 14 warnings：原有 4 项提示之外，远程版本查询增加 10 项 Gradle / AGP / AndroidX 依赖更新通知，没有新增代码正确性警告，不在此修复版升级依赖或抑制 lint。
+
+定向回归先受沙箱外 Kotlin daemon 缓存权限影响而编译失败，改用获准的本机工具权限后运行。浅滚动第 5 行首次断言通过但不足以证实恢复；加强为第 15 行后旧实现失败 1 / 2 项，第 15 行不再可见。修复仅将 detailState 的空载入 key 回退到已保存的 selectedId；同一两项测试随后 BUILD SUCCESSFUL in 40s，位置误差要求不超过 1 px。生产 MainActivity / Room 的 ActivityScenario 重建通过，确认新旧 Activity 实例不同、导航 / 选中 / 阅读及返回保留。不是设备进程回收或真实录音证据。
+
+tabletop 新截图 `models-tabletop.png`、`models-tabletop-import.png`、`sessions-tabletop-selected.png` 已人工检查；导入入口 / 记录 / 导出在各自安全区内，独立滚动可达。截图仍为 API 35 Android Canvas / Compose 主机渲染，无实际模型数据，不是 OEM 悬停或 SAF 测试。
+
+签名候选 `RC-LocalLiveTranslate-0.1.0-prealpha.2-arm64.apk` 为 82,174,797 bytes，约 78.4 MiB。签名 v3、versionCode 2 / versionName 0.1.0-prealpha.2、minSdk 28 / targetSdk 36、唯一 ARM64 ABI、非调试及无联网权限经最终 APK 核对。与第一版比较的是签名证书身份，以确认覆盖升级兼容；没有比较普通源码文件哈希。六库 ELF / ZIP 16 KB、无禁用导出、必需 JNI 和 SOURCE 检查通过。第一版 APK / 标签不覆盖；第二版的公开状态及远程结果以实际记录为准。
 
 ## prealpha 候选最终复核
 
@@ -24,7 +34,7 @@
 
 2026-10-12 11:46（Asia/Shanghai）[v0.1.0-prealpha.1](https://github.com/JDui/RC-LocalLiveTranslate/releases/tag/v0.1.0-prealpha.1) 已公开。GitHub API 核对 isDraft=false、isPrerelease=true，标签 / targetCommitish 为 `4b96d349c4144df14cb9f7cc951cc3c27cf1ae7e`，唯一 APK 附件为 uploaded、82,174,797 bytes，下载路径使用正式版本标签。模型、音频、签名私钥 / 口令未上传。公开测试交付已完成，但项目整体设备、准确率、OEM、热机和完整合规门禁仍未关闭。
 
-## 已完成
+## prealpha.1 已完成
 
 | 项目 | 结果 | 证据 |
 | --- | --- | --- |

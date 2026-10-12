@@ -470,7 +470,8 @@ internal fun SessionsScreen(sessions: List<SavedSession>, settings: UserSettings
     }, secondary = { dual ->
         val selected = chosen ?: if (dual) sessions.firstOrNull() else null
         BackHandler(enabled = !dual && chosen != null) { selectedId = null }
-        val detailState = rememberSaveable(selected?.id, saver = LazyListState.Saver) { LazyListState() }
+        // A restored selection must keep its scroll key while Room is still loading.
+        val detailState = rememberSaveable(selected?.id ?: selectedId, saver = LazyListState.Saver) { LazyListState() }
         Column(Modifier.fillMaxSize()) {
         if (selected == null) {
             Text("对话详情", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(24.dp))

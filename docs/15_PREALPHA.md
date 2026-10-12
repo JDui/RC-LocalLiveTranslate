@@ -33,7 +33,7 @@
 
 ```powershell
 ./scripts/build.ps1 -Tasks @('assembleRelease', 'testDebugUnitTest', 'lintRelease', 'assembleDebugAndroidTest', '--no-daemon', '--max-workers=2')
-./scripts/package-prealpha.ps1
+./scripts/package-prealpha.ps1 -Version 0.1.0-prealpha.1
 ```
 
 Release APK 不可调试，不做首版未验证的 R8 混淆。签名使用本地独立 RSA 3072 位密钥；脚本允许 v2 / v3，当前 minSdk 28 制品由 apksigner 验证使用 APK v3。密钥与口令只保存在忽略目录 `.tools/signing`，首次创建时限制为当前 Windows 用户 / SYSTEM 访问。不要提交或发布该目录；维护者需要保留其受保护备份，丢失密钥会影响后续同签名升级。脚本不会覆盖已有版本附件，也不会在签名材料不完整时生成替代身份。CI 只构建 Debug 测试包，不持有该私钥，也不负责正式签名。
