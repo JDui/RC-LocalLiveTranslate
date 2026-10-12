@@ -56,12 +56,40 @@ sealed interface SubtitleEvent {
 }
 
 /** Independent revision counters prevent late speaker results from replacing newer text. */
-class SubtitleReducer(private val sessionId: String, private val mode: TranslationMode = TranslationMode.TO_ZH) {
+class SubtitleReducer(private val sessionId: String, private val mode: TranslationMode = TranslationMode.TO_ZH, private val capacity: Int = Int.MAX_VALUE) {
     private val items = linkedMapOf<String, SubtitleItem>()
     private val pendingSpeakers = mutableMapOf<String, SubtitleEvent.Speaker>()
     private val pendingTranslations = mutableMapOf<String, SubtitleEvent.Translation>()
     private val speakerAliases = mutableMapOf<String, Pair<String, Int>>()
     private var mergeRevision = -1
+    var windowTrimmed: Boolean = false
+        private set
+    private var cachedSnapshot: List<SubtitleItem>? = null
+    init { require(capacity > 0) }
+    fun get(segmentId: String): SubtitleItem? = items[segmentId]
+    fun containsFinal(segmentId: String): Boolean = items[segmentId]?.stage?.let { it != CaptionStage.PARTIAL } == true
+    fun seed(item: SubtitleItem) {
+        require(item.sessionId == sessionId)
+        items[item.segmentId] = canonicalize(item)
+        cachedSnapshot = null
+        trim()
+    }
+    fun canonicalId(id: String?): String? = canonicalSpeaker(SubtitleEvent.Speaker(sessionId, "", 0, id)).speakerId
+    fun canonicalEvent(event: SubtitleEvent.Speaker): SubtitleEvent.Speaker = canonicalSpeaker(event)
+    fun canonicalize(item: SubtitleItem): SubtitleItem {
+        val speaker = canonicalSpeaker(SubtitleEvent.Speaker(sessionId, item.segmentId, item.speakerRevision, item.speakerId))
+        return if (speaker.speakerId == item.speakerId && speaker.revision == item.speakerRevision) item
+            else item.copy(speakerId = speaker.speakerId, speakerRevision = speaker.revision)
+    }
+    private fun trim() {
+        while (items.size > capacity) {
+            val oldest = items.values.minBy { it.startSample }.segmentId
+            windowTrimmed = true
+            items.remove(oldest); pendingSpeakers.remove(oldest); pendingTranslations.remove(oldest)
+        }
+        while (pendingSpeakers.size > minOf(capacity, 256)) pendingSpeakers.remove(pendingSpeakers.keys.first())
+        while (pendingTranslations.size > minOf(capacity, 256)) pendingTranslations.remove(pendingTranslations.keys.first())
+    }
 
     /** A retired label stays canonical even for delayed results outside the evidence window. */
     private fun canonicalSpeaker(event: SubtitleEvent.Speaker): SubtitleEvent.Speaker {
@@ -81,6 +109,7 @@ class SubtitleReducer(private val sessionId: String, private val mode: Translati
             merge.fromId in speakerAliases) return snapshot()
         val target = canonicalSpeaker(SubtitleEvent.Speaker(sessionId, "", merge.revision, merge.intoId)).speakerId!!
         if (target == merge.fromId) return snapshot()
+        cachedSnapshot = null
         speakerAliases[merge.fromId] = target to merge.revision
         mergeRevision = merge.revision
         items.replaceAll { _, item ->
@@ -94,6 +123,8 @@ class SubtitleReducer(private val sessionId: String, private val mode: Translati
     fun apply(event: SubtitleEvent): List<SubtitleItem> {
         if (event.sessionId != sessionId || event.revision < 0) return snapshot()
         val old = items[event.segmentId]
+        if (capacity != Int.MAX_VALUE && old == null && items.size >= capacity && event is SubtitleEvent.Transcript &&
+            event.startSample < items.values.minOf { it.startSample }) return snapshot()
         when (event) {
             is SubtitleEvent.Transcript -> {
                 if (event.startSample < 0 || event.endSample < event.startSample) return snapshot()
@@ -104,6 +135,7 @@ class SubtitleReducer(private val sessionId: String, private val mode: Translati
                 val target = mode.target(event.language)
                 val translated = translation?.takeIf { it.revision == event.revision &&
                     target != null }
+                cachedSnapshot = null
                 items[event.segmentId] = base.copy(
                     startSample = event.startSample, endSample = event.endSample,
                     revision = event.revision, sourceLanguage = event.language, targetLanguage = target,
@@ -128,6 +160,7 @@ class SubtitleReducer(private val sessionId: String, private val mode: Translati
                     if (event.revision > (pendingSpeakers[event.segmentId]?.revision ?: -1)) pendingSpeakers[event.segmentId] = canonicalSpeaker(event)
                 } else if (event.revision > old.speakerRevision) {
                     val resolved = canonicalSpeaker(event)
+                    cachedSnapshot = null
                     items[event.segmentId] = old.copy(speakerId = resolved.speakerId, speakerRevision = resolved.revision)
                 }
             }
@@ -136,14 +169,16 @@ class SubtitleReducer(private val sessionId: String, private val mode: Translati
                     if (event.revision > (pendingTranslations[event.segmentId]?.revision ?: -1)) pendingTranslations[event.segmentId] = event
                 } else if (event.revision == old.revision && event.revision > old.translationRevision &&
                     old.targetLanguage != null) {
+                    cachedSnapshot = null
                     items[event.segmentId] = old.copy(targetText = event.text, translationRevision = event.revision,
                         translationStatus = event.status)
                 }
             }
         }
+        trim()
         return snapshot()
     }
-    fun snapshot(): List<SubtitleItem> = items.values.sortedBy { it.startSample }
+    fun snapshot(): List<SubtitleItem> = cachedSnapshot ?: items.values.sortedBy { it.startSample }.also { cachedSnapshot = it }
 }
 
 fun formatTime(seconds: Long): String = "%02d:%02d".format(seconds / 60, seconds % 60)
@@ -153,11 +188,12 @@ object SessionExport {
         "[${formatTime(it.elapsedSeconds)}] ${it.speakerId?.let { id -> "Speaker $id" } ?: "未知说话人"}\n" +
             it.sourceText + if (it.targetText.isNotBlank()) "\n${it.targetText}" else ""
     }
-    fun srt(items: List<SubtitleItem>): String = items.mapIndexed { index, item ->
+    fun srt(items: List<SubtitleItem>): String = items.mapIndexed(::srtEntry).joinToString("\n\n") + "\n"
+    fun srtEntry(index: Int, item: SubtitleItem): String {
         val start = item.startSample * 1000 / 16_000
         val end = maxOf(item.endSample * 1000 / 16_000, start + 1)
-        "${index + 1}\n${srtTime(start)} --> ${srtTime(end)}\n" +
+        return "${index + 1}\n${srtTime(start)} --> ${srtTime(end)}\n" +
             "${item.speakerId?.let { "Speaker $it" } ?: "未知说话人"}: ${item.targetText.ifBlank { item.sourceText }}"
-    }.joinToString("\n\n") + "\n"
+    }
     private fun srtTime(ms: Long) = "%02d:%02d:%02d,%03d".format(ms / 3_600_000, ms / 60_000 % 60, ms / 1000 % 60, ms % 1000)
 }

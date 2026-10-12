@@ -126,31 +126,4 @@ class SpeakerTrackerTest {
         assertTrue(tracker.observe("fresh", voice(90), 2f).isEmpty())
         assertEquals("A", tracker.observe("fresh-two", voice(90), 2f).last().speakerId)
     }
-    @Test fun realTrackerMergeUpdatesCaptionsOlderThanEvidenceWindow() {
-        val tracker = SpeakerTracker()
-        val store = com.jd.rc.localtranslate.inference.ConversationStore()
-        store.begin("s")
-        var index = 0
-        fun observe(degrees: Int) {
-            val id = "${index++}"
-            store.event(com.jd.rc.localtranslate.core.SubtitleEvent.Transcript("s", id, 0, index * 32000L,
-                index * 32000L + 32000, com.jd.rc.localtranslate.core.SourceLanguage.EN, "source-$id",
-                com.jd.rc.localtranslate.core.CaptionStage.FINAL))
-            val assignments = tracker.observe(id, voice(degrees), 2f)
-            tracker.drainMerges().forEach { store.mergeSpeakers("s", it) }
-            assignments.forEach { store.event(com.jd.rc.localtranslate.core.SubtitleEvent.Speaker("s", it.segmentId, it.revision, it.speakerId)) }
-        }
-        repeat(2) { observe(0) }; repeat(2) { observe(100) }
-        assertEquals("B", store.state.value.captions.first { it.segmentId == "2" }.speakerId)
-        repeat(64) { observe(30); observe(70) }
-        repeat(64) { observe(35); observe(65) }
-        repeat(256) { observe(38); observe(62) }
-        assertTrue(index > tracker.retainedEvidenceCount)
-        val old = store.state.value.captions.first { it.segmentId == "2" }
-        assertEquals("A", old.speakerId)
-        assertEquals("source-2", old.sourceText)
-        assertEquals(96000L, old.startSample)
-        assertEquals(0, old.revision)
-        assertEquals(2, tracker.allocatedSpeakerCount)
-    }
 }

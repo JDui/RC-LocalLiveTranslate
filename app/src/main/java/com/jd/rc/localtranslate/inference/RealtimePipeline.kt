@@ -18,24 +18,38 @@ import kotlinx.coroutines.sync.withLock
 data class ConversationState(val sessionId: String = "", val captions: List<SubtitleItem> = emptyList(),
     val createdAt: Long = 0, val warning: String? = null, val droppedSegments: Long = 0, val asrMillis: Long = 0,
     val durationSamples: Long = 0, val performanceStatus: String? = null,
-    val skippedSpeakerSegments: Long = 0, val deferredTranslations: Long = 0, val translationMode: TranslationMode = TranslationMode.TO_ZH)
+    val skippedSpeakerSegments: Long = 0, val deferredTranslations: Long = 0, val translationMode: TranslationMode = TranslationMode.TO_ZH, val liveWindowTrimmed: Boolean = false)
 
 /** Only this store serializes independent recognizer, translator and speaker results. */
 class ConversationStore {
-    private var reducer = SubtitleReducer("")
+    private var reducer = SubtitleReducer("", capacity = 500)
+    private var journal: ConversationJournal? = null
     private val mutable = MutableStateFlow(ConversationState())
     val state = mutable.asStateFlow()
-    @Synchronized fun begin(id: String, mode: TranslationMode = TranslationMode.TO_ZH) { reducer = SubtitleReducer(id, mode); mutable.value = ConversationState(id, createdAt = System.currentTimeMillis(), translationMode = mode) }
+    @Synchronized fun begin(id: String, mode: TranslationMode = TranslationMode.TO_ZH, sink: ConversationJournal? = null) { journal = sink; reducer = SubtitleReducer(id, mode, 500); mutable.value = ConversationState(id, createdAt = System.currentTimeMillis(), translationMode = mode) }
+    suspend fun publish(event: SubtitleEvent) {
+        val sink = synchronized(this) { journal.takeIf { event.sessionId == mutable.value.sessionId } }
+        sink?.append(event)
+        event(event)
+    }
+    suspend fun publishMerge(sessionId: String, merge: SpeakerMerge) {
+        val sink = synchronized(this) { journal.takeIf { sessionId == mutable.value.sessionId } }
+        sink?.merge(merge)
+        mergeSpeakers(sessionId, merge)
+    }
+    @Synchronized fun attachJournal(sessionId: String, sink: ConversationJournal) { check(sessionId == mutable.value.sessionId); journal = sink }
+    @Synchronized fun detachJournal(sessionId: String) { if (sessionId == mutable.value.sessionId) journal = null }
+    @Synchronized fun hasFinal(segmentId: String): Boolean = reducer.containsFinal(segmentId)
     @Synchronized fun event(event: SubtitleEvent) {
         if (event.sessionId == mutable.value.sessionId) {
             val captions = reducer.apply(event)
-            mutable.update { it.copy(captions = captions) }
+            mutable.update { it.copy(captions = captions, liveWindowTrimmed = reducer.windowTrimmed) }
         }
     }
     @Synchronized fun mergeSpeakers(sessionId: String, merge: SpeakerMerge) {
         if (sessionId == mutable.value.sessionId) {
             val captions = reducer.mergeSpeakers(merge)
-            mutable.update { it.copy(captions = captions) }
+            mutable.update { it.copy(captions = captions, liveWindowTrimmed = reducer.windowTrimmed) }
         }
     }
     fun warn(message: String) { mutable.update { it.copy(warning = message) } }
@@ -46,6 +60,9 @@ class ConversationStore {
     fun skippedSpeaker() { mutable.update { it.copy(skippedSpeakerSegments = it.skippedSpeakerSegments + 1) } }
     fun deferredTranslation() { mutable.update { it.copy(deferredTranslations = it.deferredTranslations + 1) } }
 }
+
+internal data class TranslationWork(val id: String, val revision: Int, val text: String,
+    val language: SourceLanguage, val target: SourceLanguage, val queuedAtNanos: Long)
 
 internal data class SpeechWork(val id: String, val start: Long, val end: Long, val samples: FloatArray,
     val revision: Int, val final: Boolean, val queuedAtNanos: Long = 0)
@@ -90,7 +107,7 @@ class RealtimePipeline(private val sessionId: String, private val engines: Speec
     private val finals = Channel<SpeechWork>(4)
     private val partials = Channel<SpeechWork>(Channel.CONFLATED, onUndeliveredElement = { partialStats.discarded() })
     private val speakerQueue = Channel<SpeechWork>(4)
-    private val translations = Channel<Pair<SpeechWork, RecognizedSpeech>>(8)
+    private val translations = Channel<TranslationWork>(8)
     private val speakerPolicy = Channel<Unit>(Channel.CONFLATED)
     private val translationPolicy = Channel<Unit>(Channel.CONFLATED)
     private val tracker = SpeakerTracker()
@@ -136,38 +153,38 @@ class RealtimePipeline(private val sessionId: String, private val engines: Speec
                         tracker.observe(work.id, vector, work.samples.size / 16_000f)
                     }
                     ensureProcessing()
-                    tracker.drainMerges().forEach { store.mergeSpeakers(sessionId, it) }
+                    tracker.drainMerges().forEach { store.publishMerge(sessionId, it) }
                     assignments.forEach {
-                        store.event(SubtitleEvent.Speaker(sessionId, it.segmentId, it.revision, it.speakerId))
+                        store.publish(SubtitleEvent.Speaker(sessionId, it.segmentId, it.revision, it.speakerId))
                     }
                 }
             } finally { tracker.clear(); speakerQueue.close(); engines.releaseSpeaker() }
         } }
-        fun unavailable(work: SpeechWork) {
-            store.event(SubtitleEvent.Translation(sessionId, work.id, work.revision, "", TranslationStatus.UNAVAILABLE))
+        suspend fun unavailable(work: TranslationWork) = withContext(NonCancellable) {
+            store.publish(SubtitleEvent.Translation(sessionId, work.id, work.revision, "", TranslationStatus.UNAVAILABLE))
         }
         val translationWorker = scope.launch { guarded("本地翻译失败，原文仍可用。") {
             var ended = false
             try {
                 while (!ended) {
                     ensureProcessing()
-                    val pending = select<Pair<SpeechWork, RecognizedSpeech>?> {
+                    val pending = select<TranslationWork?> {
                         translationPolicy.onReceive { null }
                         translations.onReceiveCatching { if (it.isClosed) { ended = true; null } else it.getOrNull() }
                     }
                     if (pending != null) translationStats.dequeued()
                     if (!runtime.value.policy.translationEnabled) {
                         engines.releaseTranslation()
-                        if (pending != null) { unavailable(pending.first); store.deferredTranslation() }
+                        if (pending != null) { unavailable(pending); store.deferredTranslation() }
                         continue
                     }
-                    val (work, recognized) = pending ?: continue
+                    val work = pending ?: continue
                     ensureProcessing()
                     try {
-                        val text = diagnostics.measureSuspending(when (recognized.language) { SourceLanguage.JA -> InferenceStage.TRANSLATE_JA; SourceLanguage.ZH -> InferenceStage.TRANSLATE_ZH; else -> InferenceStage.TRANSLATE_EN },
-                            queuedAtNanos = work.queuedAtNanos) { engines.translate(recognized.text, recognized.language, requireNotNull(translationMode.target(recognized.language))) }
+                        val text = diagnostics.measureSuspending(when (work.language) { SourceLanguage.JA -> InferenceStage.TRANSLATE_JA; SourceLanguage.ZH -> InferenceStage.TRANSLATE_ZH; else -> InferenceStage.TRANSLATE_EN },
+                            queuedAtNanos = work.queuedAtNanos) { engines.translate(work.text, work.language, work.target) }
                         ensureProcessing()
-                        store.event(SubtitleEvent.Translation(sessionId, work.id, work.revision, text.orEmpty(),
+                        store.publish(SubtitleEvent.Translation(sessionId, work.id, work.revision, text.orEmpty(),
                             if (text.isNullOrBlank()) TranslationStatus.UNAVAILABLE else TranslationStatus.COMPLETE))
                         if (text == null) store.warn("缺少对应翻译模型，当前显示原文。")
                         else if (text.isBlank()) store.warn("本地翻译返回空结果，当前显示原文。")
@@ -176,11 +193,12 @@ class RealtimePipeline(private val sessionId: String, private val engines: Speec
                 }
             } finally {
                 translations.close()
-                while (true) {
-                    val pending = translations.tryReceive().getOrNull() ?: break
-                    translationStats.dequeued(); unavailable(pending.first)
-                }
-                withContext(NonCancellable) { engines.releaseTranslation() }
+                try {
+                    while (true) {
+                        val pending = translations.tryReceive().getOrNull() ?: break
+                        translationStats.dequeued(); unavailable(pending)
+                    }
+                } finally { withContext(NonCancellable) { engines.releaseTranslation() } }
             }
         } }
         val asrWorker = scope.launch { guarded("语音识别失败，请检查模型。", fatal = true) {
@@ -195,9 +213,7 @@ class RealtimePipeline(private val sessionId: String, private val engines: Speec
                     } ?: continue
                     (if (work.final) finalStats else partialStats).dequeued()
                     if (!work.final && runtime.value.policy.partialIntervalSamples == 0L) continue
-                    if (!work.final && (finalized.containsKey(work.id) || store.state.value.captions.any {
-                        it.segmentId == work.id && it.stage != CaptionStage.PARTIAL
-                    })) continue
+                    if (!work.final && (finalized.containsKey(work.id) || store.hasFinal(work.id))) continue
                     val started = System.nanoTime()
                     ensureProcessing()
                     val recognized = diagnostics.measure(if (work.final) InferenceStage.ASR_FINAL else InferenceStage.ASR_PARTIAL,
@@ -205,7 +221,7 @@ class RealtimePipeline(private val sessionId: String, private val engines: Speec
                     ensureProcessing()
                     store.latency((System.nanoTime() - started) / 1_000_000)
                     if (recognized.text.isNotBlank()) {
-                        store.event(SubtitleEvent.Transcript(sessionId, work.id, work.revision, work.start, work.end,
+                        store.publish(SubtitleEvent.Transcript(sessionId, work.id, work.revision, work.start, work.end,
                             recognized.language, recognized.text, if (work.final) CaptionStage.FINAL else CaptionStage.PARTIAL))
                         if (work.final) {
                             diagnostics.finalPublished(work.queuedAtNanos)
@@ -213,9 +229,10 @@ class RealtimePipeline(private val sessionId: String, private val engines: Speec
                             if (speakerQueue.trySend(downstream).isSuccess) speakerStats.accepted()
                             else { speakerStats.rejected(); store.warn("声纹队列积压，部分语段暂未分配说话人。") }
                             if (translationMode.target(recognized.language) != null &&
-                                !translations.trySend(downstream to recognized).isSuccess) {
+                                !translations.trySend(TranslationWork(work.id, work.revision, recognized.text, recognized.language,
+                                    requireNotNull(translationMode.target(recognized.language)), downstream.queuedAtNanos)).isSuccess) {
                                 translationStats.rejected()
-                                store.event(SubtitleEvent.Translation(sessionId, work.id, work.revision, "", TranslationStatus.UNAVAILABLE))
+                                store.publish(SubtitleEvent.Translation(sessionId, work.id, work.revision, "", TranslationStatus.UNAVAILABLE))
                                 store.warn("翻译队列积压，部分语段仅显示原文。")
                             } else if (translationMode.target(recognized.language) != null) translationStats.accepted()
                         }

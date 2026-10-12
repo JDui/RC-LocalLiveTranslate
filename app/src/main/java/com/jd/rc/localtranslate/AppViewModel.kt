@@ -18,10 +18,19 @@ data class LiveState(val sessionId: String = "", val captions: List<SubtitleItem
     val demo: Boolean = false, val running: Boolean = false, val paused: Boolean = false,
     val elapsedSeconds: Long = 0, val createdAt: Long = 0)
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val app = application as TranslateApplication
     val settings = app.settings.settings.stateIn(viewModelScope, SharingStarted.Eagerly, UserSettings())
-    val sessions = app.sessions.observe().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    private val mutableSessionPage = MutableStateFlow(0)
+    val sessionPage = mutableSessionPage.asStateFlow()
+    val sessionCount = app.sessions.observeCount().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+    val sessions = mutableSessionPage.flatMapLatest { app.sessions.observeSummaries(SESSION_PAGE_SIZE, it * SESSION_PAGE_SIZE) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    fun changeSessionPage(page: Int) {
+        mutableSessionPage.value = page.coerceIn(0, ((sessionCount.value - 1).coerceAtLeast(0) / SESSION_PAGE_SIZE))
+    }
+    fun loadSessionPage(session: SavedSession, page: Int) = app.sessionRecords.observePage(session.id, page)
     val models = app.models.state
     val recording = app.recording.state
     val performance = app.recording.performance
@@ -88,10 +97,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val state = mutableLive.value
         val title = demoTitle
         mutableLive.update { it.copy(running = false, paused = false) }
-        if (state.captions.isNotEmpty()) viewModelScope.launch {
+        val acceptedEpoch = app.settings.retentionEpoch()
+        if (state.captions.isNotEmpty()) viewModelScope.launch(Dispatchers.IO) {
             if (!app.settings.canKeepSessions()) return@launch
-            runCatching { app.sessions.save(SavedSession(state.sessionId, title, state.createdAt,
-                state.elapsedSeconds, true, CaptionJson.encode(state.captions))) }.onFailure { mutableNotice.value = "无法保存会话。" }
+            runCatching { app.sessionRecords.saveDemo(SavedSession(state.sessionId, title, state.createdAt,
+                state.elapsedSeconds, true, "[]"), state.captions, app.settings, acceptedEpoch) }.onFailure { mutableNotice.value = "无法保存会话。" }
         }
     }
     fun record(action: String) { if (!mutableLive.value.demo) app.recording.command(action) }
@@ -103,18 +113,21 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         runCatching { app.models.delete(id) }.onFailure { mutableNotice.value = "模型删除失败。" }
     } }
     fun deleteSession(id: String) { viewModelScope.launch {
+        if (id == conversation.value.sessionId && recording.value.phase in setOf(RecordingPhase.RECORDING, RecordingPhase.PAUSED,
+                RecordingPhase.STARTING, RecordingPhase.STOPPING)) {
+            mutableNotice.value = "请先停止当前会话，再删除记录。"; return@launch
+        }
         runCatching { app.sessions.delete(id) }.onFailure { mutableNotice.value = "会话删除失败。" }
     } }
     fun renameSession(id: String, title: String) { viewModelScope.launch {
         runCatching { app.sessions.rename(id, title.trim().take(80).ifBlank { "未命名会话" }) }
             .onFailure { mutableNotice.value = "会话重命名失败。" }
     } }
-    fun export(uri: Uri, session: SavedSession, format: String) { viewModelScope.launch(Dispatchers.IO) {
+    fun export(uri: Uri, sessionId: String, format: String) { viewModelScope.launch(Dispatchers.IO) {
         runCatching {
-            val items = CaptionJson.decode(session.captionsJson)
-            val text = when (format) { "srt" -> SessionExport.srt(items); "json" -> session.captionsJson; else -> SessionExport.text(items) }
-            app.contentResolver.openOutputStream(uri, "wt")?.bufferedWriter(Charsets.UTF_8)?.use { it.write(text) }
-                ?: error("output unavailable")
+            app.contentResolver.openOutputStream(uri, "wt")?.bufferedWriter(Charsets.UTF_8)?.use { writer ->
+                app.sessionRecords.export(sessionId, format, writer)
+            } ?: error("output unavailable")
         }.onSuccess { mutableNotice.value = "会话已导出。" }.onFailure { mutableNotice.value = "导出失败，请检查目标文件。" }
     } }
     fun acknowledgeNotice() { mutableNotice.value = null }

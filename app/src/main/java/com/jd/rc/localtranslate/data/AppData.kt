@@ -9,6 +9,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import androidx.room.*
 import com.jd.rc.localtranslate.core.*
 import com.jd.rc.localtranslate.runtime.PerformanceMode
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
@@ -40,6 +41,10 @@ data class SettingsChange(val theme: ThemeMode? = null, val bilingual: Boolean? 
 
 class SettingsRepository(private val context: Context) {
     @Volatile private var keepIntent: Boolean? = null
+    private val privacyEpoch = java.util.concurrent.atomic.AtomicLong()
+    private val mutableRetentionEpoch = kotlinx.coroutines.flow.MutableStateFlow(0L)
+    val retentionChanges = mutableRetentionEpoch.asStateFlow()
+    fun retentionEpoch(): Long = privacyEpoch.get()
     private val theme = stringPreferencesKey("theme")
     private val bilingual = booleanPreferencesKey("bilingual")
     private val font = floatPreferencesKey("font_size")
@@ -62,7 +67,7 @@ class SettingsRepository(private val context: Context) {
     }
     suspend fun update(change: SettingsChange) {
         // A disable request protects privacy even while the storage write is pending or fails.
-        change.keepSessions?.let { keepIntent = it }
+        change.keepSessions?.let { keepIntent = it; if (!it) mutableRetentionEpoch.value = privacyEpoch.incrementAndGet() }
         context.preferences.edit {
             change.theme?.let { value -> it[theme] = value.name }
             change.bilingual?.let { value -> it[bilingual] = value }
@@ -84,15 +89,28 @@ data class SavedSession(@PrimaryKey val id: String, val title: String, val creat
 @Dao
 interface SessionDao {
     @Query("SELECT * FROM sessions ORDER BY createdAt DESC") fun observe(): Flow<List<SavedSession>>
+    @Query("SELECT id, title, createdAt, durationSeconds, isDemo, '[]' AS captionsJson FROM sessions ORDER BY createdAt DESC, id DESC LIMIT :limit OFFSET :offset")
+    fun observeSummaries(limit: Int, offset: Int): Flow<List<SavedSession>>
+    @Query("SELECT COUNT(*) FROM sessions") fun observeCount(): Flow<Int>
+    @Query("SELECT id, title, createdAt, durationSeconds, isDemo, '[]' AS captionsJson FROM sessions WHERE id = :id")
+    suspend fun metadata(id: String): SavedSession?
+    @Query("SELECT length(captionsJson) FROM sessions WHERE id = :id") suspend fun legacyLength(id: String): Long?
+    @Query("SELECT substr(captionsJson, :start, :length) FROM sessions WHERE id = :id")
+    fun legacySlice(id: String, start: Long, length: Int): String?
+    @Query("UPDATE sessions SET captionsJson = '[]' WHERE id = :id") suspend fun clearLegacy(id: String)
+    @Insert(onConflict = OnConflictStrategy.IGNORE) suspend fun create(session: SavedSession)
+    @Query("UPDATE sessions SET durationSeconds = MAX(durationSeconds, :seconds) WHERE id = :id")
+    suspend fun duration(id: String, seconds: Long)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun save(session: SavedSession)
     @Query("DELETE FROM sessions WHERE id = :id") suspend fun delete(id: String)
     @Query("UPDATE sessions SET title = :title WHERE id = :id") suspend fun rename(id: String, title: String)
 }
-@Database(entities = [SavedSession::class], version = 1, exportSchema = false)
-abstract class SessionDatabase : RoomDatabase() { abstract fun sessions(): SessionDao }
+
 
 object CaptionJson {
-    fun encode(items: List<SubtitleItem>): String = JSONArray().apply { items.forEach { item -> put(JSONObject().apply {
+    fun encode(items: List<SubtitleItem>): String = JSONArray().apply { items.forEach { put(objectFor(it)) } }.toString(2)
+    fun encodeItem(item: SubtitleItem): String = objectFor(item).toString()
+    private fun objectFor(item: SubtitleItem): JSONObject = JSONObject().apply {
         put("sessionId", item.sessionId); put("segmentId", item.segmentId)
         put("startSample", item.startSample); put("endSample", item.endSample); put("revision", item.revision)
         put("language", item.sourceLanguage.name); put("source", item.sourceText); put("target", item.targetText)
@@ -100,17 +118,19 @@ object CaptionJson {
         put("targetLanguage", item.targetLanguage?.name ?: JSONObject.NULL)
         put("translationStatus", item.translationStatus.name)
         put("speakerRevision", item.speakerRevision); put("translationRevision", item.translationRevision)
-    }) } }.toString(2)
+    }
     fun decode(value: String): List<SubtitleItem> {
         val array = JSONArray(value)
-        return (0 until array.length()).map { index -> array.getJSONObject(index).let {
-            SubtitleItem(it.getString("sessionId"), it.getString("segmentId"), it.getLong("startSample"),
-                it.getLong("endSample"), it.getInt("revision"), SourceLanguage.valueOf(it.getString("language")),
-                it.getString("source"), it.getString("target"), if (it.isNull("speaker")) null else it.getString("speaker"),
-                CaptionStage.valueOf(it.getString("stage")), TranslationStatus.valueOf(it.getString("translationStatus")),
-                it.optInt("speakerRevision", -1), it.optInt("translationRevision", -1),
-                if (it.has("targetLanguage")) { if (it.isNull("targetLanguage")) null else SourceLanguage.valueOf(it.getString("targetLanguage")) }
-                else TranslationMode.TO_ZH.target(SourceLanguage.valueOf(it.getString("language"))))
-        } }
+        return (0 until array.length()).map { decodeObject(array.getJSONObject(it)) }
+    }
+    fun decodeItem(value: String): SubtitleItem = decodeObject(JSONObject(value))
+    fun decodeObject(value: JSONObject): SubtitleItem = value.let {
+        SubtitleItem(it.getString("sessionId"), it.getString("segmentId"), it.getLong("startSample"),
+            it.getLong("endSample"), it.getInt("revision"), SourceLanguage.valueOf(it.getString("language")),
+            it.getString("source"), it.getString("target"), if (it.isNull("speaker")) null else it.getString("speaker"),
+            CaptionStage.valueOf(it.getString("stage")), TranslationStatus.valueOf(it.getString("translationStatus")),
+            it.optInt("speakerRevision", -1), it.optInt("translationRevision", -1),
+            if (it.has("targetLanguage")) { if (it.isNull("targetLanguage")) null else SourceLanguage.valueOf(it.getString("targetLanguage")) }
+            else TranslationMode.TO_ZH.target(SourceLanguage.valueOf(it.getString("language"))))
     }
 }

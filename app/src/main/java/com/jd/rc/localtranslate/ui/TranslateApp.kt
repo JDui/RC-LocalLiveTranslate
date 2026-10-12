@@ -52,6 +52,7 @@ import com.jd.rc.localtranslate.data.*
 import com.jd.rc.localtranslate.model.*
 import com.jd.rc.localtranslate.inference.ConversationState
 import com.jd.rc.localtranslate.runtime.*
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import java.text.SimpleDateFormat
@@ -71,7 +72,6 @@ fun TranslateApp(vm: AppViewModel) {
     val live by vm.live.collectAsStateWithLifecycle()
     val recording by vm.recording.collectAsStateWithLifecycle()
     val models by vm.models.collectAsStateWithLifecycle()
-    val sessions by vm.sessions.collectAsStateWithLifecycle()
     val notice by vm.notice.collectAsStateWithLifecycle()
     val processing by vm.conversation.collectAsStateWithLifecycle()
     val performance by vm.performance.collectAsStateWithLifecycle()
@@ -96,7 +96,13 @@ fun TranslateApp(vm: AppViewModel) {
                             LiveScreen(live, recording, settings, vm::startDemo, vm::pauseDemo, vm::stopDemo, vm::record, processing, changeMode = { vm.setSettings(SettingsChange(translationMode = it)) }, modelBusy = models.busy)
                         }
                         composable(Page.MODELS.name) { ModelsScreen(models, vm::importModel, vm::deleteModel) }
-                        composable(Page.SESSIONS.name) { SessionsScreen(sessions, settings, vm::renameSession, vm::deleteSession, vm::export) }
+                        composable(Page.SESSIONS.name) {
+                            val sessions by vm.sessions.collectAsStateWithLifecycle()
+                            val count by vm.sessionCount.collectAsStateWithLifecycle()
+                            val page by vm.sessionPage.collectAsStateWithLifecycle()
+                            SessionsScreen(sessions, settings, vm::renameSession, vm::deleteSession, vm::export,
+                                page, count, vm::changeSessionPage, vm::loadSessionPage)
+                        }
                         composable(Page.SETTINGS.name) { SettingsScreen(settings, recording, vm::setSettings, processing, performance,
                             processSample, diagnostics != null, vm::prepareDiagnosticExport, vm::exportDiagnostics, live.demo, vm::setDemo, live.running || live.paused) }
                     }
@@ -205,6 +211,9 @@ internal fun LiveScreen(live: LiveState, recording: RecordingState, settings: Us
             if (live.demo) Text("演示数据", color = MaterialTheme.colorScheme.primary,
                 style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(start = 8.dp))
         }
+        if (!live.demo && processing.liveWindowTrimmed) Text(
+            if (settings.keepSessions) "显示最近 500 条，保留的内容可在对话记录查看" else "显示最近 500 条，记录保留已关闭",
+            Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.labelSmall)
         val listState = rememberLazyListState()
         var followBottom by rememberSaveable(live.sessionId) { mutableStateOf(true) }
         var userScrolling by remember(live.sessionId) { mutableStateOf(false) }
@@ -424,10 +433,23 @@ private fun ModelRow(slot: ModelSlot, state: ModelState, delete: () -> Unit) {
 
 @Composable
 internal fun SessionsScreen(sessions: List<SavedSession>, settings: UserSettings, rename: (String, String) -> Unit,
-    delete: (String) -> Unit, export: (Uri, SavedSession, String) -> Unit) {
+    delete: (String) -> Unit, export: (Uri, String, String) -> Unit,
+    listPage: Int = 0, totalCount: Int = sessions.size, changePage: (Int) -> Unit = {},
+    loadPage: (SavedSession, Int) -> kotlinx.coroutines.flow.Flow<SessionCaptionPage>) {
     var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
-    val chosen = sessions.find { it.id == selectedId }
-    val listState = rememberLazyListState()
+    var selectedTitle by rememberSaveable { mutableStateOf("") }
+    var selectedCreatedAt by rememberSaveable { mutableLongStateOf(0) }
+    var selectedDuration by rememberSaveable { mutableLongStateOf(0) }
+    var selectedDemo by rememberSaveable { mutableStateOf(false) }
+    val chosen = sessions.find { it.id == selectedId } ?: selectedId?.let {
+        SavedSession(it, selectedTitle, selectedCreatedAt, selectedDuration, selectedDemo, "[]")
+    }
+    LaunchedEffect(chosen?.id, chosen?.title, chosen?.durationSeconds) {
+        chosen?.let { selectedTitle = it.title; selectedCreatedAt = it.createdAt; selectedDuration = it.durationSeconds; selectedDemo = it.isDemo }
+    }
+    val lastListPage = (totalCount - 1).coerceAtLeast(0) / SESSION_PAGE_SIZE
+    LaunchedEffect(listPage, lastListPage) { if (listPage > lastListPage) changePage(lastListPage) }
+    val listState = rememberSaveable(listPage, saver = LazyListState.Saver) { LazyListState() }
     var deleting by remember { mutableStateOf<SavedSession?>(null) }
     var renaming by remember { mutableStateOf<SavedSession?>(null) }
     var title by remember { mutableStateOf("") }
@@ -435,17 +457,18 @@ internal fun SessionsScreen(sessions: List<SavedSession>, settings: UserSettings
     var exportFormat by rememberSaveable { mutableStateOf("txt") }
     var exportMenu by remember { mutableStateOf(false) }
     val txt = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
-        uri?.let { target -> sessions.find { it.id == exportSessionId }?.let { export(target, it, exportFormat) } }; exportSessionId = null
+        uri?.let { target -> exportSessionId?.let { export(target, it, exportFormat) } }; exportSessionId = null
     }
     val json = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
-        uri?.let { target -> sessions.find { it.id == exportSessionId }?.let { export(target, it, exportFormat) } }; exportSessionId = null
+        uri?.let { target -> exportSessionId?.let { export(target, it, exportFormat) } }; exportSessionId = null
     }
     val srt = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/x-subrip")) { uri ->
-        uri?.let { target -> sessions.find { it.id == exportSessionId }?.let { export(target, it, exportFormat) } }; exportSessionId = null
+        uri?.let { target -> exportSessionId?.let { export(target, it, exportFormat) } }; exportSessionId = null
     }
     FoldContentLayout(compact = if (chosen == null) CompactContent.PRIMARY else CompactContent.SECONDARY, primary = { dual ->
         Column(Modifier.fillMaxSize()) {
             PageHeader(Page.SESSIONS)
+            if (totalCount > SESSION_PAGE_SIZE || listPage > 0) RecordPager(listPage, listPage < lastListPage, "记录", changePage)
             if (sessions.isEmpty()) Column(Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center) {
                 Icon(Icons.Outlined.History, null, Modifier.size(52.dp), tint = MaterialTheme.colorScheme.primary)
@@ -477,7 +500,8 @@ internal fun SessionsScreen(sessions: List<SavedSession>, settings: UserSettings
         val selected = chosen ?: if (dual) sessions.firstOrNull() else null
         BackHandler(enabled = !dual && chosen != null) { selectedId = null }
         // A restored selection must keep its scroll key while Room is still loading.
-        val detailState = rememberSaveable(selected?.id ?: selectedId, saver = LazyListState.Saver) { LazyListState() }
+        var captionPage by rememberSaveable(selected?.id ?: selectedId) { mutableIntStateOf(0) }
+        val detailState = rememberSaveable(selected?.id ?: selectedId, captionPage, saver = LazyListState.Saver) { LazyListState() }
         Column(Modifier.fillMaxSize()) {
         if (selected == null) {
             Text("对话详情", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(24.dp))
@@ -501,9 +525,23 @@ internal fun SessionsScreen(sessions: List<SavedSession>, settings: UserSettings
                     } })
                 }
             }
-            val captions = remember(selected.captionsJson) { runCatching { CaptionJson.decode(selected.captionsJson) }.getOrDefault(emptyList()) }
+            var retry by remember { mutableIntStateOf(0) }
+            val detail by produceState<SessionDetailLoad>(SessionDetailLoad(), selected.id, selected.captionsJson, captionPage, retry) {
+                value = SessionDetailLoad()
+                try { loadPage(selected, captionPage).collect { value = SessionDetailLoad(it, loading = false) } }
+                catch (cancelled: CancellationException) { throw cancelled }
+                catch (_: Exception) { value = SessionDetailLoad(loading = false, failed = true) }
+            }
+            if (captionPage > 0 || detail.page?.hasMore == true)
+                RecordPager(captionPage, detail.page?.hasMore == true, "字幕") { captionPage = it }
+            if (detail.loading) Text("正在读取记录", Modifier.padding(horizontal = 24.dp))
+            if (detail.failed) Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("记录读取失败", Modifier.weight(1f))
+                TextButton(onClick = { retry++ }) { Text("重试") }
+            }
+            val captions = detail.page?.items.orEmpty()
             if (selected.isDemo) Text("演示数据", Modifier.padding(horizontal = 24.dp), color = MaterialTheme.colorScheme.secondary)
-            LazyColumn(state = detailState, modifier = Modifier.weight(1f).testTag("session-captions"), contentPadding = PaddingValues(24.dp)) {
+            if (captions.isEmpty()) Spacer(Modifier.weight(1f)) else LazyColumn(state = detailState, modifier = Modifier.weight(1f).testTag("session-captions"), contentPadding = PaddingValues(24.dp)) {
                 items(captions, key = { it.segmentId }) { CaptionRow(it, settings) }
             }
         }
@@ -515,8 +553,19 @@ internal fun SessionsScreen(sessions: List<SavedSession>, settings: UserSettings
         dismissButton = { TextButton(onClick = { renaming = null }) { Text("取消") } }) }
     deleting?.let { session -> FoldAlertDialog(onDismissRequest = { deleting = null }, title = { Text("删除这段记录？") },
         text = { Text("${SessionTitle.display(session)}\n删除后无法恢复。") },
-        confirmButton = { TextButton(onClick = { delete(session.id); deleting = null }) { Text("删除") } },
+        confirmButton = { TextButton(onClick = { delete(session.id); if (selectedId == session.id) selectedId = null; deleting = null }) { Text("删除") } },
         dismissButton = { TextButton(onClick = { deleting = null }) { Text("取消") } }) }
+}
+
+private data class SessionDetailLoad(val page: SessionCaptionPage? = null, val loading: Boolean = true, val failed: Boolean = false)
+
+@Composable
+private fun RecordPager(page: Int, hasMore: Boolean, label: String, change: (Int) -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        ToolButton(Icons.AutoMirrored.Outlined.ArrowBack, "上一页$label", page > 0) { change(page - 1) }
+        Text("第 ${page + 1} 页", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+        ToolButton(Icons.AutoMirrored.Outlined.ArrowForward, "下一页$label", hasMore) { change(page + 1) }
+    }
 }
 
 @Composable

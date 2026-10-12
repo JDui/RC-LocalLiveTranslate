@@ -54,3 +54,5 @@ AudioRecord -> 16 kHz mono PCM RingBuffer -> Silero VAD -> SpeechSegments。
 设置控件提交字段级变更，DataStore 在事务内只写这些字段，不用旧页面快照覆盖整份设置。关闭记录的意图在提交调用开始时生效，显示或性能更新不重置隐私意图；生产及演示会话保存都经过同一保留记录门禁。
 
 RunDiagnostics 是会话独立的有界指标收集器，不持有音频 / 文字 / embedding。采集只调用预注册原子计数；推理 worker 记录各自调用，内存与电池由 Service 的 IO 任务采样。JSON 排序、分位数与 SAF 写入都在导出 IO 任务执行。ViewModel 固定待导出的报告引用，不承担采集或 JNI 生命周期；普通退出不持久化诊断，设备测试单独显式写报告。采样窗口、计时口径及局限见 07_QUALITY。
+
+记录持久化改为有界 IO journal、按字幕行存储；实时500条、列表50条、详情200条与旧JSON按需迁移见 [效率维护](22_EFFICIENCY_MAINTENANCE.md) 和 ADR-0007。

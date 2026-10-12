@@ -13,9 +13,9 @@ import android.os.SystemClock
 import com.jd.rc.localtranslate.MainActivity
 import com.jd.rc.localtranslate.R
 import com.jd.rc.localtranslate.TranslateApplication
-import com.jd.rc.localtranslate.data.CaptionJson
 import com.jd.rc.localtranslate.data.SavedSession
 import com.jd.rc.localtranslate.data.SessionTitle
+import com.jd.rc.localtranslate.data.SessionRecorder
 import com.jd.rc.localtranslate.inference.ConversationStore
 import com.jd.rc.localtranslate.inference.NativeEngines
 import com.jd.rc.localtranslate.inference.RealtimePipeline
@@ -78,6 +78,7 @@ class RecordingService : Service() {
     private var offset = 0L
     private var dropped = 0L
     private var recoveries = 0
+    private var sessionRecorder: SessionRecorder? = null
     private var sessionTitle = ""
     private var sessionId = ""
     private var pipeline: RealtimePipeline? = null
@@ -165,6 +166,13 @@ class RecordingService : Service() {
                 val settings = app.settings.settings.first()
                 controller.conversation.begin(sessionId, settings.translationMode)
                 sessionTitle = SessionTitle.create(controller.conversation.state.value.createdAt, settings.sessionCity)
+                val state = controller.conversation.state.value
+                sessionRecorder = SessionRecorder(app.sessionDatabase, app.settings,
+                    SavedSession(sessionId, sessionTitle, state.createdAt, 0, false, "[]"), settings.translationMode, app.workScope) { message ->
+                    controller.conversation.warn(message)
+                    stopRequested = true; captureJob?.cancel(); commands.trySend(STOP)
+                }
+                controller.conversation.attachJournal(sessionId, sessionRecorder!!)
                 pipeline = RealtimePipeline(sessionId, engines, controller.conversation, scope, sessionPerformance, diagnostics!!) {
                     stopRequested = true; captureJob?.cancel(); commands.trySend(STOP)
                 }
@@ -276,18 +284,17 @@ class RecordingService : Service() {
         controller.mutable.value = RecordingState(RecordingPhase.ERROR, error = "无法启动本地推理：$message")
         stopForeground(STOP_FOREGROUND_REMOVE); stopSelf()
     }
-    private suspend fun releasePipeline(save: Boolean) = withContext(NonCancellable) {
+    private suspend fun releasePipeline(save: Boolean) = withContext(NonCancellable + Dispatchers.IO) {
         val current = pipeline
         val pending = pendingEngines
-        pipeline = null
-        pendingEngines = null
+        val recorder = sessionRecorder
+        pipeline = null; pendingEngines = null; sessionRecorder = null
         try {
-            if (current != null) current.finish() else pending?.close()
-            val state = controller.conversation.state.value
-            if (save && state.sessionId == sessionId && state.captions.isNotEmpty() && app.settings.canKeepSessions()) {
-                runCatching { app.sessions.save(SavedSession(state.sessionId, sessionTitle, state.createdAt,
-                    offset / 16_000, false, CaptionJson.encode(state.captions))) }
-                    .onFailure { controller.conversation.warn("会话未能保存，请检查可用存储。") }
+            try { if (current != null) current.finish() else pending?.close() }
+            finally {
+                runCatching { recorder?.finish(offset / 16_000, save) }
+                    .onFailure { controller.conversation.warn("会话未能完整保存，请检查可用存储。") }
+                controller.conversation.detachJournal(sessionId)
             }
         } finally {
             diagnostics?.end()
@@ -306,7 +313,7 @@ class RecordingService : Service() {
         controller.mutablePerformance.update { it.copy(active = false) }
         val capture = captureJob
         commands.close(); scope.cancel()
-        if (pipeline != null || pendingEngines != null || runtimeLocked) {
+        if (pipeline != null || pendingEngines != null || sessionRecorder != null || runtimeLocked) {
             if (controller.mutable.value.phase != RecordingPhase.ERROR) controller.mutable.update { it.copy(phase = RecordingPhase.STOPPING) }
             app.workScope.launch {
                 capture?.join(); commandJob?.join(); releasePipeline(save = true)

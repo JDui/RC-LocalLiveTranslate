@@ -25,6 +25,11 @@ import org.robolectric.annotation.LooperMode
 class ActivityLifecycleUiTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
 
+    private fun waitForCaptions() = compose.waitUntil(5000) {
+        shadowOf(Looper.getMainLooper()).idle()
+        compose.onAllNodesWithTag("session-captions").fetchSemanticsNodes().isNotEmpty()
+    }
+
     @Test fun productionActivityRecreationRetainsNavigationSelectionAndReading() {
         val app = ApplicationProvider.getApplicationContext<TranslateApplication>()
         val captions = (0 until 40).map { index ->
@@ -40,6 +45,7 @@ class ActivityLifecycleUiTest {
             compose.onAllNodesWithContentDescription("打开会话 Lifecycle record").fetchSemanticsNodes().isNotEmpty()
         }
         compose.onNodeWithContentDescription("打开会话 Lifecycle record").performClick()
+        waitForCaptions()
         compose.onNodeWithTag("session-captions").performScrollToIndex(15)
         compose.onNodeWithText("Lifecycle line 15").assertIsDisplayed()
         val position = compose.onNodeWithText("Lifecycle line 15").fetchSemanticsNode().boundsInRoot.top
@@ -47,6 +53,7 @@ class ActivityLifecycleUiTest {
         compose.activityRule.scenario.recreate()
         compose.waitForIdle()
         assertNotSame(previous, compose.activity)
+        waitForCaptions()
         compose.onNodeWithText("Lifecycle line 15").assertIsDisplayed()
         assertEquals(position, compose.onNodeWithText("Lifecycle line 15").fetchSemanticsNode().boundsInRoot.top, 1f)
         compose.onNodeWithContentDescription("返回记录列表").performClick()

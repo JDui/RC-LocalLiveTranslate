@@ -88,7 +88,7 @@ class ComposeUiTest {
                                     Page.LIVE -> LiveScreen(LiveState("demo", captions, true, paused = true, elapsedSeconds = 12), RecordingState(), settings, {}, {}, {}, {})
                                     Page.MODELS -> ModelsScreen(ModelState(), {}, {})
                                     Page.SESSIONS -> SessionsScreen(listOf(SavedSession("demo", savedTitle, 1_791_520_000_000,
-                                        18, true, CaptionJson.encode(captions))), settings, { _, _ -> }, {}, { _, _, _ -> })
+                                        18, true, CaptionJson.encode(captions))), settings, { _, _ -> }, {}, { _, _, _ -> }, loadPage = ::fixturePage)
                                     Page.SETTINGS -> SettingsScreen(settings, RecordingState(), {})
                                 }
                         }
@@ -410,7 +410,7 @@ class ComposeUiTest {
             GlassTheme(UserSettings()) {
                 FoldAppShell(listOf(WindowFold(IntRect(0, 440, 900, 460), FoldAxis.HORIZONTAL, true, true)),
                     Modifier.fillMaxSize(), navigation = { GlassNavigation(Page.SESSIONS, it) {} }) {
-                    SessionsScreen(longSessions(), UserSettings(), { _, _ -> }, {}, { _, _, _ -> })
+                    SessionsScreen(longSessions(), UserSettings(), { _, _ -> }, {}, { _, _, _ -> }, loadPage = ::fixturePage)
                 }
             }
         }
@@ -421,6 +421,58 @@ class ComposeUiTest {
         assertTrue(compose.onNodeWithTag("session-captions").fetchSemanticsNode().boundsInRoot.top > 460)
         compose.onNodeWithContentDescription("导出").assertIsDisplayed()
         snapshot("sessions-tabletop-selected")
+    }
+    @Test fun sessionCaptionPaginationPreservesSelectionAndLoadsOnlyRequestedPage() {
+        val rows = (0 until 405).map { captions[0].copy(sessionId = "paged", segmentId = "page-$it", sourceText = "Page line $it", targetText = "") }
+        val requested = mutableListOf<Int>()
+        val record = SavedSession("paged", "Paged record", 1, 405, false, "[]")
+        compose.setContent {
+            GlassTheme(UserSettings()) {
+                FoldAppShell(emptyList(), Modifier.fillMaxSize(), navigation = { GlassNavigation(Page.SESSIONS, it) {} }) {
+                    SessionsScreen(listOf(record), UserSettings(), { _, _ -> }, {}, { _, _, _ -> }, loadPage = { _, page ->
+                        requested += page
+                        kotlinx.coroutines.flow.flowOf(com.jd.rc.localtranslate.data.SessionCaptionPage(rows.drop(page * 200).take(200), rows.size > (page + 1) * 200))
+                    })
+                }
+            }
+        }
+        compose.onNodeWithContentDescription("打开会话 Paged record").performClick()
+        compose.onNodeWithText("Page line 0").assertIsDisplayed()
+        compose.onNodeWithContentDescription("下一页字幕").performClick()
+        compose.onNodeWithText("Page line 200").assertIsDisplayed()
+        compose.onNodeWithText("Page line 0").assertDoesNotExist()
+        compose.onNodeWithContentDescription("下一页字幕").performClick()
+        compose.onNodeWithText("Page line 400").assertIsDisplayed()
+        compose.onNodeWithContentDescription("下一页字幕").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("上一页字幕").performClick()
+        compose.onNodeWithText("Page line 200").assertIsDisplayed()
+        compose.runOnIdle { assertEquals(listOf(0, 1, 2, 1), requested) }
+        snapshot("sessions-paged-captions")
+    }
+    @Test @Config(qualifiers = "w900dp-h900dp-mdpi") fun metadataPaginationKeepsOpenedRecordOnOtherListPage() {
+        val page = mutableStateOf(0)
+        val records = (0 until 51).map { SavedSession("list-$it", "List record $it", it.toLong(), 1, false, "[]") }
+        compose.setContent {
+            GlassTheme(UserSettings()) {
+                FoldAppShell(listOf(WindowFold(IntRect(440, 0, 460, 900), FoldAxis.VERTICAL, true, true)), Modifier.fillMaxSize(), navigation = { GlassNavigation(Page.SESSIONS, it) {} }) {
+                    SessionsScreen(records.drop(page.value * 50).take(50), UserSettings(), { _, _ -> }, {}, { _, _, _ -> },
+                        page.value, 51, { page.value = it }, loadPage = { record, _ ->
+                            kotlinx.coroutines.flow.flowOf(com.jd.rc.localtranslate.data.SessionCaptionPage(listOf(captions[0].copy(segmentId = record.id, sourceText = "Opened " + record.id)), false))
+                        })
+                }
+            }
+        }
+        compose.onNodeWithContentDescription("打开会话 List record 1").performClick()
+        compose.onNodeWithText("Opened list-1").assertIsDisplayed()
+        compose.onNodeWithContentDescription("下一页记录").performClick()
+        compose.onNodeWithContentDescription("打开会话 List record 50").assertIsDisplayed()
+        compose.onNodeWithText("Opened list-1").assertIsDisplayed()
+        compose.onNodeWithContentDescription("下一页记录").assertIsNotEnabled()
+        snapshot("sessions-paged-metadata")
+    }
+    private fun fixturePage(session: SavedSession, page: Int): kotlinx.coroutines.flow.Flow<com.jd.rc.localtranslate.data.SessionCaptionPage> {
+        val items = CaptionJson.decode(session.captionsJson)
+        return kotlinx.coroutines.flow.flowOf(com.jd.rc.localtranslate.data.SessionCaptionPage(items.drop(page * 200).take(200), items.size > (page + 1) * 200))
     }
     private fun longSessions() = (1..2).map { number ->
         val rows = (0 until 40).map { captions[0].copy(segmentId = "$number-$it", sourceText = "Record $number Line $it", targetText = "") }
@@ -433,7 +485,7 @@ class ComposeUiTest {
             GlassTheme(UserSettings()) {
                 Box(Modifier.width(width.value).fillMaxHeight()) {
                     FoldAppShell(folds.value, Modifier.fillMaxSize(), navigation = { GlassNavigation(Page.SESSIONS, it) {} }) {
-                        SessionsScreen(longSessions(), UserSettings(), { _, _ -> }, {}, { _, _, _ -> })
+                        SessionsScreen(longSessions(), UserSettings(), { _, _ -> }, {}, { _, _, _ -> }, loadPage = ::fixturePage)
                     }
                 }
             }
@@ -458,7 +510,7 @@ class ComposeUiTest {
         restoration.setContent {
             GlassTheme(UserSettings()) {
                 FoldAppShell(emptyList(), Modifier.fillMaxSize(), navigation = { GlassNavigation(Page.SESSIONS, it) {} }) {
-                    SessionsScreen(longSessions(), UserSettings(), { _, _ -> }, {}, { _, _, _ -> })
+                    SessionsScreen(longSessions(), UserSettings(), { _, _ -> }, {}, { _, _, _ -> }, loadPage = ::fixturePage)
                 }
             }
         }
@@ -480,7 +532,7 @@ class ComposeUiTest {
             SideEffect { rows = loaded }
             GlassTheme(UserSettings()) {
                 FoldAppShell(emptyList(), Modifier.fillMaxSize(), navigation = { GlassNavigation(Page.SESSIONS, it) {} }) {
-                    SessionsScreen(loaded.value, UserSettings(), { _, _ -> }, {}, { _, _, _ -> })
+                    SessionsScreen(loaded.value, UserSettings(), { _, _ -> }, {}, { _, _, _ -> }, loadPage = ::fixturePage)
                 }
             }
         }
