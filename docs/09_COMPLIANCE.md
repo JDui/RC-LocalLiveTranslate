@@ -35,6 +35,8 @@
 
 ## Android 权限
 
+GUI Macrobenchmark 使用独立测试包和独立目标包，正式应用不新增依赖或权限。工具产生的 Perfetto traces 可能包含系统/设备信息，不自动上传，分享前须审阅；测试包数据会被每轮清除。详细边界见 [17_BENCHMARK.md](17_BENCHMARK.md)。
+
 | 操作 | 相关权限与限制 |
 | --- | --- |
 | 麦克风 | RECORD_AUDIO 运行时授权 |

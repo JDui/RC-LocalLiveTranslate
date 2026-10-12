@@ -1,6 +1,7 @@
 param([string]$Apk = '')
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
+. (Join-Path $PSScriptRoot 'elf-alignment.ps1')
 if (!$Apk) { $Apk = Join-Path $root 'app/build/outputs/apk/debug/app-debug.apk' }
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $zip = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path -LiteralPath $Apk))
@@ -24,23 +25,7 @@ try {
         $memory = [System.IO.MemoryStream]::new()
         try { $stream.CopyTo($memory); $bytes = $memory.ToArray() } finally { $stream.Dispose(); $memory.Dispose() }
         if ($entry.FullName -eq 'lib/arm64-v8a/libsherpa-onnx-jni.so') { $jniBytes = $bytes }
-        if ($bytes[0] -ne 127 -or $bytes[1] -ne 69 -or $bytes[2] -ne 76 -or $bytes[3] -ne 70 -or $bytes[4] -ne 2 -or $bytes[5] -ne 1) {
-            throw "Not an ELF64 little-endian library: $($entry.FullName)"
-        }
-        $phoff = [BitConverter]::ToUInt64($bytes, 32)
-        $phsize = [BitConverter]::ToUInt16($bytes, 54)
-        $phcount = [BitConverter]::ToUInt16($bytes, 56)
-        for ($i = 0; $i -lt $phcount; $i++) {
-            $offset = [int]($phoff + $i * $phsize)
-            if ([BitConverter]::ToUInt32($bytes, $offset) -ne 1) { continue }
-            $fileOffset = [BitConverter]::ToUInt64($bytes, $offset + 8)
-            $virtualAddress = [BitConverter]::ToUInt64($bytes, $offset + 16)
-            $alignment = [BitConverter]::ToUInt64($bytes, $offset + 48)
-            if ($alignment -lt 16384 -or $fileOffset % 16384 -ne $virtualAddress % 16384) {
-                throw "PT_LOAD is not 16 KB aligned: $($entry.FullName)"
-            }
-        }
-        Write-Output "ELF 16 KB PASS: $($entry.FullName)"
+        Assert-Arm64Elf16Kb -Bytes $bytes -Name $entry.FullName
     }
 } finally { $zip.Dispose() }
 $sdk = Join-Path $root '.tools/android-sdk'

@@ -125,3 +125,7 @@ NativeModelTest 在管线清理后导出 `diagnostics/native-model.json` 和 `.c
 4. 完成原生依赖及权重合规、项目许可证决策和可重现发行审核。不能以编译通过代替项目完成。
 
 未指定项目 LICENSE，未将模型权重打入 APK 或 Git，也未发布正式 Release；五套模型基线仅已在本地忽略目录打包。
+
+## GUI 性能工具入口
+
+独立性能测试模块的构建、API 31+ ARM64 真机运行及数据清除限制见 [17_BENCHMARK.md](17_BENCHMARK.md)。工具只用固定演示，不加载模型或打开麦克风，不能作为真实推理验收。

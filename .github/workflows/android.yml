@@ -25,10 +25,15 @@ jobs:
       - name: Prepare pinned offline native SDKs
         shell: pwsh
         run: ./scripts/bootstrap-native.ps1
-      - run: ./gradlew assembleDebug testDebugUnitTest lintDebug assembleDebugAndroidTest --console=plain
+      - run: ./gradlew assembleRelease assembleDebug testDebugUnitTest lintDebug assembleDebugAndroidTest :app:assembleBenchmark :app:lintBenchmark :macrobenchmark:assembleBenchmark --console=plain --max-workers=2
       - name: Check native alignment
         shell: pwsh
         run: ./scripts/verify-native.ps1
+      - name: Check isolated benchmark packages and alignment
+        shell: pwsh
+        run: |
+          ./scripts/test-elf-alignment.ps1
+          ./scripts/verify-benchmark.ps1
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -37,3 +42,5 @@ jobs:
             app/build/outputs/apk/debug/*.apk
             app/build/reports/
             app/build/ui-screenshots/
+            app/build/outputs/apk/benchmark/*.apk
+            macrobenchmark/build/outputs/apk/benchmark/*.apk

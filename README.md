@@ -31,6 +31,7 @@
 
 - [prealpha 安装与已知限制](docs/15_PREALPHA.md)
 - [prealpha.2 恢复修复与升级](docs/16_PREALPHA_2.md)
+- [GUI 真机性能测试工具与隔离](docs/17_BENCHMARK.md)
 - [Android 构建、已实现范围与模型包协议](docs/10_DEVELOPMENT.md)
 - [当前验证结果与待测项](docs/11_VALIDATION.md)
 - [翻译魔芋图标与生成记录](docs/12_ICON.md)

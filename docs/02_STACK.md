@@ -29,4 +29,6 @@ ABI、minSdk 与 CPU 指令回退以最终打包原生库为准；Android 16 KB 
 
 **不采用：**Flutter、React Native、WebView 主 UI、云 API、手机端 PyTorch/Python。
 
+独立 GUI 基准工具固定 AndroidX Benchmark 1.4.1、UIAutomator 2.3.0、Tracing Perfetto core / binary / handshake 1.0.1，API 31+、ARM64；不增加正式应用运行依赖。Perfetto 1.0.1 用于 16 KB 段对齐，实际 APK 另有静态门禁。运行边界见 17_BENCHMARK.md。
+
 资料：[Compose BOM](https://developer.android.com/develop/ui/compose/bom)、[Foxlet](https://github.com/yinvoke/foxlet-translate)、[sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx)。

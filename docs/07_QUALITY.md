@@ -35,3 +35,5 @@ P50/P90 需有样本数、设备及分布，未达到时以录音连续性优先
 硬件历史最多 720 条（约 60 分钟），峰值只是在 5 秒采样点观察到的峰值，不保证捕获短暂加载峰值；被淘汰样本仍参与计数和峰值。API 35 RSS 使用 Debug.getRss，旧版读取本进程 VmRSS，两种统计口径以 rssMethod 标识。测试工具和生产运行来源分开，不以 fake 推理结果充当真实模型性能。
 
 建立单元测试、Gradle assembleDebug、Compose UI test、Android 仪器测试、真机 Macrobenchmark。**构建成功 ≠ 真机 AI 性能验证成功**，没有测过必须标 NOT TESTED。
+
+GUI Macrobenchmark 模块与三个用例已构建，静态包隔离与 16 KB 校验通过；设备测试未运行，入口及测量边界见 [17_BENCHMARK.md](17_BENCHMARK.md)。

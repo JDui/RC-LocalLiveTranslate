@@ -6,4 +6,4 @@ dependencyResolutionManagement {
     repositories { google(); mavenCentral() }
 }
 rootProject.name = "RC-LocalLiveTranslate"
-include(":app")
+include(":app", ":macrobenchmark")

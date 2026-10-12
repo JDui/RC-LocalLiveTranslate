@@ -18,6 +18,14 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { compose = true }
+    buildTypes {
+        create("benchmark") {
+            initWith(getByName("release"))
+            applicationIdSuffix = ".benchmark"
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += "release"
+        }
+    }
     sourceSets["main"].apply {
         java.srcDir(rootProject.file(".tools/native/sherpa/kotlin"))
         jniLibs.srcDir(rootProject.file(".tools/native/sherpa/jniLibs"))

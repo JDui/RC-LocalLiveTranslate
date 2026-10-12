@@ -2,6 +2,14 @@
 
 日期：2026-10-09 至 2026-10-12（Asia/Shanghai）。当前源码为 Android 0.1.0-prealpha.2；各阶段旧数据明确保留，不将旧版本检查当作新制品证据。
 
+## GUI 基准工具构建（未随 prealpha.2 发布）
+
+2026-10-12 新增独立 Macrobenchmark 及三个设备用例。完整 Debug / Release / 普通测试 / lint / 设备测试 APK / benchmark target lint / benchmark 双 APK 命令 BUILD SUCCESSFUL in 2m 28s；现有普通报告仍为 146 项、0 failures / errors / skipped，不把缓存命中当作重新执行。主用户保护首次使用非公开 SDK 的 `UserHandle.of` 导致编译失败，改为公开的 `getUserHandleForUid` 后工具重编译 BUILD SUCCESSFUL in 17s，实际执行 compileBenchmarkKotlin。任务列表确认 `connectedBenchmarkAndroidTest` 存在，但未执行设备测试。
+
+三个实际 APK 的包名 / Manifest 隔离检查、正式版与被测包非调试 / 无联网和广泛存储权限、仅 benchmark target profileable、六个应用原生库与两个工具库 ARM64 ELF / ZIP 16 KB 均 PASS。共享 ELF 校验器在已发布签名 prealpha.2 APK 上回归通过；8 个内存合成检查通过，分别记录，不加入 JVM 或设备测试数量。初版 Perfetto 1.0.0 的 4 KB 问题已通过固定全套 1.0.1 修复，最终 APK 验证通过。
+
+没有连接 Android 真机；三个 GUI benchmark 没有启动耗时、帧耗时或旋转恢复的实测结果，主用户门禁同样未运行。方法和隐私边界见 17_BENCHMARK.md。此段是本地证据；新增 CI 结果须以实际运行记录为准，不引用 prealpha.2 的旧绿色检查证明新工具。
+
 ## prealpha.2 恢复与 tabletop 回归
 
 2026-10-12 新增 tabletop Models / Sessions、延迟记录载入恢复、生产 MainActivity 重建共 4 项主机回归。普通总数 146，0 failures / 0 errors / 0 skipped；完整 Debug / Release / 普通测试 / 两类 lint / 设备测试 APK 命令 BUILD SUCCESSFUL in 2m 2s，普通测试实际执行。Debug / Release lint 各 0 errors / 14 warnings：原有 4 项提示之外，远程版本查询增加 10 项 Gradle / AGP / AndroidX 依赖更新通知，没有新增代码正确性警告，不在此修复版升级依赖或抑制 lint。
