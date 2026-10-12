@@ -10,6 +10,8 @@
 
 没有连接 Android 真机；三个 GUI benchmark 没有启动耗时、帧耗时或旋转恢复的实测结果，主用户门禁同样未运行。方法和隐私边界见 17_BENCHMARK.md。此段是本地证据；新增 CI 结果须以实际运行记录为准，不引用 prealpha.2 的旧绿色检查证明新工具。
 
+实现提交 `6e3d5da` 的 [远程运行 38213770530](https://github.com/JDui/RC-LocalLiveTranslate/actions/runs/38213770530) 已完成、结论 success。主机 `:app:testDebugUnitTest` 实际执行，无 UP-TO-DATE 标记；Gradle BUILD SUCCESSFUL in 6m 35s、219 项任务实际执行。正式 / 目标 / 工具 Manifest 隔离、Perfetto ARM64 ELF、工具 APK ZIP 与 8 项合成校验均 PASS，两个 benchmark APK 已上传为 CI 附件。整个作业 10m 58s，不把它当作手机性能。CI 提示 action Node runtime / setup-java v4 弃用及 ubuntu-latest 后续镜像迁移，当前不是失败；未隐藏这些提示。公开 prealpha.2 的标签和附件保持不变，所有设备门禁仍未关闭。
+
 ## prealpha.2 恢复与 tabletop 回归
 
 2026-10-12 新增 tabletop Models / Sessions、延迟记录载入恢复、生产 MainActivity 重建共 4 项主机回归。普通总数 146，0 failures / 0 errors / 0 skipped；完整 Debug / Release / 普通测试 / 两类 lint / 设备测试 APK 命令 BUILD SUCCESSFUL in 2m 2s，普通测试实际执行。Debug / Release lint 各 0 errors / 14 warnings：原有 4 项提示之外，远程版本查询增加 10 项 Gradle / AGP / AndroidX 依赖更新通知，没有新增代码正确性警告，不在此修复版升级依赖或抑制 lint。
