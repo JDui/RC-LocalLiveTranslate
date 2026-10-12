@@ -31,6 +31,8 @@
 
 ## 文档索引
 
+- [紧凑字幕布局、记录命名与翻译提速规划](docs/21_TRANSLATION_SPEED_PLAN.md)
+
 - [prealpha 安装与已知限制](docs/15_PREALPHA.md)
 - [prealpha.2 恢复修复与升级](docs/16_PREALPHA_2.md)
 - [prealpha.3 Hy-MT2 与双向翻译](docs/18_PREALPHA_3.md)

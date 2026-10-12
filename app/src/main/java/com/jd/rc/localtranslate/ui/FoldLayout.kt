@@ -167,7 +167,7 @@ internal fun FoldAppShell(folds: List<WindowFold>, modifier: Modifier = Modifier
     val clearance = with(density) { 8.dp.roundToPx() }
     val minWidth = with(density) { (if (fontScale > 1.3f) 320 else 280).dp.roundToPx() }
     val minHeight = with(density) { (if (fontScale > 1.3f) 360 else 240).dp.roundToPx() }
-    val railWidth = with(density) { 116.dp.roundToPx() }
+    val railWidth = with(density) { 96.dp.roundToPx() }
     val railThreshold = with(density) { 600.dp.roundToPx() }
     Layout(modifier = modifier.onGloballyPositioned {
         val position = it.positionInWindow()
@@ -264,9 +264,10 @@ internal fun FoldLiveLayout(body: @Composable () -> Unit, controls: @Composable 
         Box(Modifier.clipToBounds()) { body() }
         Box(Modifier.clipToBounds()) { controls(companion) }
     }, modifier = Modifier.fillMaxSize()) { children, constraints ->
-        val panes = contentPanes(plan, constraints.maxWidth, constraints.maxHeight,
-            with(density) { (if (fontScale > 1.3f) 400 else 360).dp.roundToPx() },
-            with(density) { 240.dp.roundToPx() }, with(density) { 24.dp.roundToPx() })
+        // An unfolded screen gives all remaining width to the subtitle list.
+        // Only physical fold separation creates a translation companion pane.
+        val panes = plan ?: PanePlan(IntRect(0, 0, constraints.maxWidth, constraints.maxHeight),
+            IntRect(0, 0, constraints.maxWidth, constraints.maxHeight), false)
         val primary = panes.primary
         val secondary = panes.controls
         val next = panes.split && primary.top == secondary.top && secondary.height >= with(density) { 400.dp.roundToPx() }

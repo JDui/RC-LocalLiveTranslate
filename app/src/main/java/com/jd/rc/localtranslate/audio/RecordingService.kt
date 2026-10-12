@@ -15,6 +15,7 @@ import com.jd.rc.localtranslate.R
 import com.jd.rc.localtranslate.TranslateApplication
 import com.jd.rc.localtranslate.data.CaptionJson
 import com.jd.rc.localtranslate.data.SavedSession
+import com.jd.rc.localtranslate.data.SessionTitle
 import com.jd.rc.localtranslate.inference.ConversationStore
 import com.jd.rc.localtranslate.inference.NativeEngines
 import com.jd.rc.localtranslate.inference.RealtimePipeline
@@ -77,6 +78,7 @@ class RecordingService : Service() {
     private var offset = 0L
     private var dropped = 0L
     private var recoveries = 0
+    private var sessionTitle = ""
     private var sessionId = ""
     private var pipeline: RealtimePipeline? = null
     private var pendingEngines: NativeEngines? = null
@@ -160,7 +162,9 @@ class RecordingService : Service() {
                 } catch (error: Throwable) { lease.close(); throw error }
                 pendingEngines = engines
                 offset = 0; dropped = 0; recoveries = 0; sessionId = java.util.UUID.randomUUID().toString()
-                controller.conversation.begin(sessionId, app.settings.settings.first().translationMode)
+                val settings = app.settings.settings.first()
+                controller.conversation.begin(sessionId, settings.translationMode)
+                sessionTitle = SessionTitle.create(controller.conversation.state.value.createdAt, settings.sessionCity)
                 pipeline = RealtimePipeline(sessionId, engines, controller.conversation, scope, sessionPerformance, diagnostics!!) {
                     stopRequested = true; captureJob?.cancel(); commands.trySend(STOP)
                 }
@@ -281,7 +285,7 @@ class RecordingService : Service() {
             if (current != null) current.finish() else pending?.close()
             val state = controller.conversation.state.value
             if (save && state.sessionId == sessionId && state.captions.isNotEmpty() && app.settings.canKeepSessions()) {
-                runCatching { app.sessions.save(SavedSession(state.sessionId, "本地对话", state.createdAt,
+                runCatching { app.sessions.save(SavedSession(state.sessionId, sessionTitle, state.createdAt,
                     offset / 16_000, false, CaptionJson.encode(state.captions))) }
                     .onFailure { controller.conversation.warn("会话未能保存，请检查可用存储。") }
             }

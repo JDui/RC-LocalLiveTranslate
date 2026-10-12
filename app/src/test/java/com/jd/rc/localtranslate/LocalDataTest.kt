@@ -105,9 +105,20 @@ class LocalDataTest {
         assertFalse(app.settings.canKeepSessions())
         assertFalse(current.bilingual)
         assertTrue(current.reduceTransparency)
-        assertEquals(28f, current.fontSize)
+        assertEquals(24f, current.fontSize)
         app.settings.update(SettingsChange(keepSessions = true))
         assertTrue(app.settings.canKeepSessions())
+    }
+    @Test fun smallestFontAndCityPersistWithoutChangingPrivacy() = runBlocking {
+        val app = ApplicationProvider.getApplicationContext<TranslateApplication>()
+        app.settings.update(UserSettings(keepSessions = false))
+        app.settings.update(SettingsChange(fontSize = 8f, sessionCity = " 上海\n[] "))
+        val settings = SettingsRepository(app).settings.first()
+        assertEquals(8f, settings.fontSize)
+        assertEquals("上海", settings.sessionCity)
+        assertFalse(settings.keepSessions)
+        app.settings.update(SettingsChange(fontSize = 1f))
+        assertEquals(8f, app.settings.settings.first().fontSize)
     }
     @Test @LooperMode(LooperMode.Mode.PAUSED) fun privacyDisableProtectsBeforeUiFlowPublishes() {
         val app = ApplicationProvider.getApplicationContext<TranslateApplication>()

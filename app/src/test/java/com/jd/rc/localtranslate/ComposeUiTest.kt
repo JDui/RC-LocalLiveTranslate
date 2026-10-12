@@ -57,8 +57,7 @@ class ComposeUiTest {
         val settings = mutableStateOf(UserSettings())
         compose.setContent {
             GlassTheme(settings.value) {
-                LiveScreen(LiveState(), RecordingState(), settings.value, 0, {}, {}, {}, {}, {}, {}, {},
-                    changeMode = { settings.value = settings.value.copy(translationMode = it) })
+                LiveScreen(LiveState(), RecordingState(), settings.value, {}, {}, {}, {}, changeMode = { settings.value = settings.value.copy(translationMode = it) })
             }
         }
         compose.onNodeWithText("译中文").performClick()
@@ -66,6 +65,7 @@ class ComposeUiTest {
         compose.onNodeWithText("中 ↔ 日").assertExists()
         compose.runOnIdle { assertEquals(TranslationMode.ZH_JA, settings.value.translationMode) }
     }
+    private val savedTitle = SessionTitle.create(1_791_520_000_000, "上海")
     private val captions = listOf(
         SubtitleItem("demo", "1", 0, 56_000, 1, SourceLanguage.EN,
             "Shall we take a walk by the river after the meeting?", "会议结束后，我们去河边走走好吗？", "A", CaptionStage.FINAL, TranslationStatus.COMPLETE),
@@ -85,10 +85,9 @@ class ComposeUiTest {
                         GlassBackdrop(Modifier.matchParentSize())
                         FoldAppShell(folds, Modifier.fillMaxSize().safeDrawingPadding(), navigation = { GlassNavigation(page, it) {} }) {
                                 when (page) {
-                                    Page.LIVE -> LiveScreen(LiveState("demo", captions, true, paused = true, elapsedSeconds = 12),
-                                        RecordingState(), settings, 0, {}, {}, {}, {}, {}, {}, {})
+                                    Page.LIVE -> LiveScreen(LiveState("demo", captions, true, paused = true, elapsedSeconds = 12), RecordingState(), settings, {}, {}, {}, {})
                                     Page.MODELS -> ModelsScreen(ModelState(), {}, {})
-                                    Page.SESSIONS -> SessionsScreen(listOf(SavedSession("demo", "多语言对话 · 演示", 1_791_520_000_000,
+                                    Page.SESSIONS -> SessionsScreen(listOf(SavedSession("demo", savedTitle, 1_791_520_000_000,
                                         18, true, CaptionJson.encode(captions))), settings, { _, _ -> }, {}, { _, _, _ -> })
                                     Page.SETTINGS -> SettingsScreen(settings, RecordingState(), {})
                                 }
@@ -124,8 +123,7 @@ class ComposeUiTest {
         compose.setContent {
             GlassTheme(UserSettings()) {
                 FoldAppShell(emptyList(), Modifier.fillMaxSize(), navigation = { GlassNavigation(Page.LIVE, it) {} }) {
-                    LiveScreen(LiveState("follow", rows.value, demo = true), RecordingState(), UserSettings(), 4,
-                        {}, {}, {}, {}, {}, {}, {})
+                    LiveScreen(LiveState("follow", rows.value, demo = true), RecordingState(), UserSettings(), {}, {}, {}, {})
                 }
             }
         }
@@ -146,7 +144,7 @@ class ComposeUiTest {
             CompositionLocalProvider(LocalDensity provides Density(density.density, 2f)) {
                 GlassTheme(UserSettings()) {
                     FoldAppShell(emptyList(), Modifier.fillMaxSize(), navigation = { GlassNavigation(Page.LIVE, it) {} }) {
-                        LiveScreen(LiveState(), RecordingState(), UserSettings(), 4, {}, {}, {}, {}, {}, {}, {})
+                        LiveScreen(LiveState(), RecordingState(), UserSettings(), {}, {}, {}, {})
                     }
                 }
             }
@@ -154,6 +152,29 @@ class ComposeUiTest {
         compose.onNodeWithText("暂无字幕").assertIsDisplayed()
         compose.onNodeWithText("开始拾音").assertIsDisplayed()
         assertTrue(compose.onNodeWithTag("live-content").fetchSemanticsNode().boundsInRoot.height >= 96f)
+    }
+    @Test @Config(qualifiers = "w360dp-h640dp-mdpi") fun compactLiveKeepsMostHeightForSubtitles() {
+        compose.setContent {
+            GlassTheme(UserSettings()) {
+                FoldAppShell(emptyList(), Modifier.fillMaxSize(), navigation = { GlassNavigation(Page.LIVE, it, 4) {} }) {
+                    LiveScreen(LiveState("compact", captions, paused = true), RecordingState(phase = RecordingPhase.PAUSED),
+                        UserSettings(fontSize = 8f), {}, {}, {}, {})
+                }
+            }
+        }
+        compose.onNodeWithContentDescription("切换为仅译文").assertDoesNotExist()
+        compose.onNodeWithText("麦克风").assertDoesNotExist()
+        compose.onNodeWithText("演示").assertDoesNotExist()
+        compose.onNodeWithText("模型 4/4").assertIsDisplayed()
+        compose.onNodeWithText("继续").assertIsDisplayed()
+        compose.onNodeWithContentDescription("停止").assertIsDisplayed()
+        val content = compose.onNodeWithTag("live-content").fetchSemanticsNode().boundsInRoot
+        val toolbar = compose.onNodeWithTag("live-toolbar").fetchSemanticsNode().boundsInRoot
+        val controls = compose.onNodeWithTag("live-controls").fetchSemanticsNode().boundsInRoot
+        assertTrue(content.height >= 450f)
+        assertTrue(toolbar.height <= 52f)
+        assertTrue(controls.height <= 64f)
+        snapshot("live-compact-font-8")
     }
     @Test fun modelDetailsKeepTechnicalMetadataOutOfList() {
         val state = ModelState(installed = listOf(InstalledModel("sensevoice", "fixture-version", "fixture-license", "https://example.org/model", 1024)))
@@ -178,13 +199,13 @@ class ComposeUiTest {
     @Test fun renderSessions() = render("sessions", Page.SESSIONS)
     @Test @Config(qualifiers = "w900dp-h900dp-mdpi") fun renderBookFold() {
         render("live-book-fold", folds = listOf(WindowFold(IntRect(450, 0, 450, 900), FoldAxis.VERTICAL, true, false)))
-        val title = compose.onNode(hasText("即时字幕") and !hasContentDescription("即时字幕")).fetchSemanticsNode().boundsInRoot
+        val title = compose.onNodeWithTag("live-toolbar").fetchSemanticsNode().boundsInRoot
         val controls = compose.onNodeWithText("继续").fetchSemanticsNode().boundsInRoot
         assertTrue(title.right < 450); assertTrue(controls.left > 450)
     }
     @Test @Config(qualifiers = "w900dp-h900dp-mdpi") fun renderTabletopFold() {
         render("live-tabletop-fold", folds = listOf(WindowFold(IntRect(0, 450, 900, 450), FoldAxis.HORIZONTAL, true, false)))
-        assertTrue(compose.onNode(hasText("即时字幕") and !hasContentDescription("即时字幕")).fetchSemanticsNode().boundsInRoot.bottom < 450)
+        assertTrue(compose.onNodeWithTag("live-toolbar").fetchSemanticsNode().boundsInRoot.bottom < 450)
         assertTrue(compose.onNodeWithText("继续").fetchSemanticsNode().boundsInRoot.top > 450)
     }
     @Test @Config(qualifiers = "w900dp-h900dp-mdpi") fun renderDualScreenSettings() {
@@ -194,7 +215,7 @@ class ComposeUiTest {
     }
     @Test @Config(qualifiers = "w900dp-h900dp-mdpi") fun sessionDialogStaysInsideBookPane() {
         render("session-book-fold", Page.SESSIONS, folds = listOf(WindowFold(IntRect(440, 0, 460, 900), FoldAxis.VERTICAL, true, true)))
-        compose.onNodeWithContentDescription("打开会话 多语言对话 · 演示").performClick()
+        compose.onNodeWithContentDescription("打开会话 $savedTitle").performClick()
         compose.onNodeWithContentDescription("重命名").performClick()
         val dialog = compose.onNodeWithText("重命名会话").fetchSemanticsNode().boundsInRoot
         assertTrue(dialog.right < 440)
@@ -211,8 +232,7 @@ class ComposeUiTest {
             androidx.compose.runtime.SideEffect { observed.value = folds }
             GlassTheme(UserSettings()) {
                 FoldAppShell(folds, Modifier.fillMaxSize(), navigation = { GlassNavigation(Page.LIVE, it) {} }) {
-                    LiveScreen(LiveState("unchanged-session", history, true, paused = true), RecordingState(), UserSettings(), 0,
-                        {}, {}, {}, {}, {}, {}, {})
+                    LiveScreen(LiveState("unchanged-session", history, true, paused = true), RecordingState(), UserSettings(), {}, {}, {}, {})
                 }
             }
         }
@@ -247,14 +267,16 @@ class ComposeUiTest {
         compose.onNodeWithText("SenseVoice Small").assertIsDisplayed()
         compose.onNodeWithContentDescription("即时字幕").performClick()
         compose.onNodeWithText("开始拾音").assertIsDisplayed()
-        compose.onNodeWithText("演示").performClick()
+        compose.onNodeWithContentDescription("设置").performClick()
+        compose.onNodeWithTag("demo-mode").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("即时字幕").performClick()
         compose.onNodeWithText("演示数据").assertIsDisplayed()
         assertTrue(vm.live.value.demo)
         assertEquals(com.jd.rc.localtranslate.audio.RecordingPhase.IDLE, vm.recording.value.phase)
     }
     @Test fun historicalSessionOpensAndOffersAllExportFormats() {
         render("session-list-interaction", Page.SESSIONS)
-        compose.onNodeWithContentDescription("打开会话 多语言对话 · 演示").performClick()
+        compose.onNodeWithContentDescription("打开会话 $savedTitle").performClick()
         compose.onNodeWithText("会议结束后，我们去河边走走好吗？", substring = true).assertIsDisplayed()
         compose.onNodeWithContentDescription("导出").performClick()
         compose.onNodeWithText("纯文本").assertIsDisplayed()
@@ -324,8 +346,7 @@ class ComposeUiTest {
             CompositionLocalProvider(LocalDensity provides Density(density.density, 2f)) {
                 GlassTheme(UserSettings()) {
                     FoldAppShell(emptyList(), Modifier.fillMaxSize(), navigation = { GlassNavigation(Page.LIVE, it) {} }) {
-                        LiveScreen(LiveState("session", captions, running = true), RecordingState(phase = RecordingPhase.RECORDING),
-                            UserSettings(), 5, {}, {}, {}, {}, {}, {}, {}, processing = ConversationState(
+                        LiveScreen(LiveState("session", captions, running = true), RecordingState(phase = RecordingPhase.RECORDING), UserSettings(), {}, {}, {}, {}, processing = ConversationState(
                                 performanceStatus = "原文优先：临时字幕、翻译与声纹暂停。"))
                     }
                 }
@@ -354,13 +375,13 @@ class ComposeUiTest {
         assertTrue(compose.onNodeWithText("SenseVoice Small").fetchSemanticsNode().boundsInRoot.right < 440)
         assertTrue(compose.onNodeWithText("Hy-MT2 1.8B · 1.25-bit").fetchSemanticsNode().boundsInRoot.left > 460)
     }
-    @Test @Config(qualifiers = "w900dp-h900dp-mdpi") fun flatLiveHasTranslationCompanionAndReachableControls() {
+    @Test @Config(qualifiers = "w900dp-h900dp-mdpi") fun flatLiveUsesFullWidthForCaptionsAndReachableControls() {
         render("live-expanded")
         val history = compose.onNodeWithTag("live-captions").fetchSemanticsNode().boundsInRoot
-        val companion = compose.onNodeWithTag("live-companion").fetchSemanticsNode().boundsInRoot
+        compose.onNodeWithTag("live-companion").assertDoesNotExist()
         val resume = compose.onNodeWithText("继续").fetchSemanticsNode().boundsInRoot
-        assertTrue(history.right <= companion.left)
-        assertTrue(companion.bottom <= resume.top)
+        assertTrue(history.width >= 760f)
+        assertTrue(history.bottom <= resume.top)
         compose.onNodeWithText("继续").assertIsDisplayed()
     }
     @Test @Config(qualifiers = "w900dp-h900dp-mdpi") fun tabletopSettingsKeepControlsBelowHinge() {
@@ -500,9 +521,7 @@ class ComposeUiTest {
         compose.setContent {
             GlassTheme(UserSettings()) {
                 FoldAppShell(folds.value, Modifier.fillMaxSize(), navigation = { GlassNavigation(Page.LIVE, it) {} }) {
-                    LiveScreen(LiveState("same-session", captions, demo = false, running = true),
-                        RecordingState(phase = RecordingPhase.RECORDING, sampleOffset = 192_000), UserSettings(), 5,
-                        {}, {}, {}, {}, { commands += it }, {}, {})
+                    LiveScreen(LiveState("same-session", captions, demo = false, running = true), RecordingState(phase = RecordingPhase.RECORDING, sampleOffset = 192_000), UserSettings(), {}, {}, {}, { commands += it })
                 }
             }
         }

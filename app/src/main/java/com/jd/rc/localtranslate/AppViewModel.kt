@@ -38,6 +38,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     val notice = mutableNotice.asStateFlow()
     private var demoJob: Job? = null
     private var reducer = SubtitleReducer("")
+    private var demoTitle = ""
     private var demoMode = TranslationMode.TO_ZH
     private var demoStep = 0
     init { viewModelScope.launch { app.models.refresh() } }
@@ -51,7 +52,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         if (!mutableLive.value.paused) {
             demoMode = settings.value.translationMode
             val id = UUID.randomUUID().toString(); reducer = SubtitleReducer(id, demoMode); demoStep = 0
-            mutableLive.value = LiveState(id, demo = true, createdAt = System.currentTimeMillis())
+            val createdAt = System.currentTimeMillis()
+            demoTitle = SessionTitle.create(createdAt, settings.value.sessionCity)
+            mutableLive.value = LiveState(id, demo = true, createdAt = createdAt)
         }
         mutableLive.update { it.copy(running = true, paused = false) }
         demoJob = viewModelScope.launch {
@@ -83,10 +86,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun stopDemo() { demoJob?.cancel(); finishDemo() }
     private fun finishDemo() {
         val state = mutableLive.value
+        val title = demoTitle
         mutableLive.update { it.copy(running = false, paused = false) }
         if (state.captions.isNotEmpty()) viewModelScope.launch {
             if (!app.settings.canKeepSessions()) return@launch
-            runCatching { app.sessions.save(SavedSession(state.sessionId, "多语言对话 · 演示", state.createdAt,
+            runCatching { app.sessions.save(SavedSession(state.sessionId, title, state.createdAt,
                 state.elapsedSeconds, true, CaptionJson.encode(state.captions))) }.onFailure { mutableNotice.value = "无法保存会话。" }
         }
     }
