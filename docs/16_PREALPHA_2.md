@@ -6,7 +6,7 @@
 - 补齐 tabletop 模型 / 记录页的安全分区、独立滚动、导入 / 导出入口回归与截图。
 - 增加生产 MainActivity / Room 的 ActivityScenario 重建，以及延迟载入的第 15 行 / 1 px 位置回归。
 
-当前签名候选为 `RC-LocalLiveTranslate-0.1.0-prealpha.2-arm64.apk`，82,174,797 bytes（约 78.4 MiB）。Android 9 / API 28+、ARM64；versionCode 2，与第一版签名证书一致，可覆盖安装，第一版附件不替换。公开发行状态以 [版本页面](https://github.com/JDui/RC-LocalLiveTranslate/releases/tag/v0.1.0-prealpha.2) 为准。
+2026-10-12 已公开发布，下载 [版本页面](https://github.com/JDui/RC-LocalLiveTranslate/releases/tag/v0.1.0-prealpha.2) 的 `RC-LocalLiveTranslate-0.1.0-prealpha.2-arm64.apk`，82,174,797 bytes（约 78.4 MiB）。Android 9 / API 28+、ARM64；versionCode 2，与第一版签名证书一致，满足同签名覆盖升级条件，第一版附件不替换。实现提交 `37aa8b3` 的远程 CI 已通过；真实设备安装 / 升级仍未验收。
 
 ## 使用与边界
 

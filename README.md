@@ -2,7 +2,7 @@
 
 **Android 原生 · 完全离线 · 中英日自动识别 · 说话人分离 · 中文实时字幕**
 
-> 项目阶段：[Android 0.1.0-prealpha.1 已发布](https://github.com/JDui/RC-LocalLiveTranslate/releases/tag/v0.1.0-prealpha.1)（2026-10-12）。已接入 sherpa-onnx / Foxlet 原生库、VAD→ASR/LID→翻译及说话人追踪，具备液态玻璃 GUI、折叠屏功能双栏与铰链避让、翻译魔芋自适应图标、采样率回退与本地重采样、热 / 低内存分档、省电模式、有界 JSON/CSV 运行诊断、模型导入与文本记录。说话人支持全历史合并和有界近期拆分；sherpa JNI 从固定源码关闭无关 TTS 构建。**142 项主机测试通过，非调试 ARM64 APK 已签名，远程 CI 通过；精度、性能及折叠屏 OEM 行为尚未经过实机验证，不是稳定完成版。安装、模型准备与限制见 [测试版说明](docs/15_PREALPHA.md)。**
+> 项目阶段：[Android 0.1.0-prealpha.2 已发布](https://github.com/JDui/RC-LocalLiveTranslate/releases/tag/v0.1.0-prealpha.2)（2026-10-12）。已接入 sherpa-onnx / Foxlet 原生库、VAD→ASR/LID→翻译及说话人追踪，具备液态玻璃 GUI、折叠屏功能双栏与铰链避让、翻译魔芋自适应图标、采样率回退与本地重采样、热 / 低内存分档、省电模式、有界 JSON/CSV 运行诊断、模型导入与文本记录。说话人支持全历史合并和有界近期拆分；sherpa JNI 从固定源码关闭无关 TTS 构建。第二版修复延迟加载时阅读恢复，并补齐 tabletop 与生产 Activity 重建回归。**146 项主机测试通过，非调试 ARM64 APK 已签名，远程 CI 通过；精度、性能及折叠屏 OEM 行为尚未经过实机验证，不是稳定完成版。升级与限制见 [第二版说明](docs/16_PREALPHA_2.md)。**
 
 ## 定位
 

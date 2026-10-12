@@ -12,6 +12,10 @@ tabletop 新截图 `models-tabletop.png`、`models-tabletop-import.png`、`sessi
 
 签名候选 `RC-LocalLiveTranslate-0.1.0-prealpha.2-arm64.apk` 为 82,174,797 bytes，约 78.4 MiB。签名 v3、versionCode 2 / versionName 0.1.0-prealpha.2、minSdk 28 / targetSdk 36、唯一 ARM64 ABI、非调试及无联网权限经最终 APK 核对。与第一版比较的是签名证书身份，以确认覆盖升级兼容；没有比较普通源码文件哈希。六库 ELF / ZIP 16 KB、无禁用导出、必需 JNI 和 SOURCE 检查通过。第一版 APK / 标签不覆盖；第二版的公开状态及远程结果以实际记录为准。
 
+实现提交 `37aa8b3` 的 [远程运行 38203778203](https://github.com/JDui/RC-LocalLiveTranslate/actions/runs/38203778203) 已完成、结论 success。日志确认普通主机测试实际执行，BUILD SUCCESSFUL in 2m 56s，原生必需入口 / 禁用导出 / SOURCE 和 APK ZIP 16 KB 检查 PASS；设备测试仍仅构建。获取运行日志首次遇到网络 EOF，重取成功，未重新触发或假冒构建。
+
+2026-10-12 12:43（Asia/Shanghai）[v0.1.0-prealpha.2](https://github.com/JDui/RC-LocalLiveTranslate/releases/tag/v0.1.0-prealpha.2) 已公开。API 核对非草稿、预发布、targetCommitish 为 `37aa8b379aef4ae91bf3a0ca7fc597ea2d8b77e1`，唯一 APK 附件 uploaded、82,174,797 bytes，正式版本下载路径有效。第一版保持不变。真实设备、冷启动杀进程、准确率、折叠体验及热机门禁仍未关闭。
+
 ## prealpha 候选最终复核
 
 2026-10-12 完整命令 `./scripts/build.ps1 -Tasks @('assembleRelease','assembleDebug','testDebugUnitTest','lintRelease','lintDebug','assembleDebugAndroidTest','--no-daemon','--max-workers=2')` 为 BUILD SUCCESSFUL in 55s。142 项普通测试 XML 均为 0 failures / 0 errors / 0 skipped；本次测试任务 UP-TO-DATE，报告实际执行时间为 2026-10-09 20:32，不计为重新执行。新增设置版本回归曾因遗漏测试 context 引用编译失败，修复后报告中的 29 项 ComposeUiTest 全部通过。Debug / Release lint 各 0 errors / 4 原有 warnings。
