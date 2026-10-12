@@ -12,6 +12,10 @@
 
 公开 Release 与远程 CI 的状态以实际发布和运行记录为准；本节仅记录已完成的本地主机、构建和签名检查。
 
+### 首次远程 CI
+
+2026-10-12 推送 `4b96d34` 后的 [运行 38200164627](https://github.com/JDui/RC-LocalLiveTranslate/actions/runs/38200164627) 在 SDK 安装步骤失败：setup-android v3 默认请求 `tools`，sdkmanager 报 `Failed to find package 'tools'`。原生准备、Gradle 和测试均未执行，不计为编译或测试失败 / 成功。按 [安装动作上游说明](https://github.com/android-actions/setup-android#the-deprecated-tools-package) 显式设置 `packages: platform-tools`，保留固定 NDK / CMake；修复的远程结果另行核对。
+
 ## 已完成
 
 | 项目 | 结果 | 证据 |
@@ -161,5 +165,5 @@ NDK 29.0.14206865 / CMake 3.22.1 / Clang 21.0.0 从固定 sherpa 提交完成 AR
 - 热 / 低内存动态降级及性能档位已实现并有主机回归，但触发阈值、实际模型的内存峰值 / 释放 / 重载以及 30–60 分钟热机均未验收。长会话 speaker 全历史合并 / 有界近期拆分已实现，真人效果和更早语段的拆分重建没有证据。
 - 五套真实基线包已通过主机生产导入器，三个语音模型已在 Windows x64 运行；Android JNI、损坏大模型、存储耗尽、系统 SAF 文档提供者和手机 native 加载仍未验收。
 - 未进行 Android 9–17 设备矩阵、16 KB page size 实机兼容、飞行模式真实推理、PSS/RTF/延迟、30–60 分钟热机或电池测试。
-- GitHub Actions 工作流已添加；未推送运行，不声称远程 CI 成功。
+- GitHub Actions 已推送运行；首轮在 SDK 安装失败，修复后状态见上述记录，不声称远程 CI 成功。
 - 未创建公开 Release，未替仓库所有者指定源码许可证。
