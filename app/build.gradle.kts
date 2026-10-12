@@ -44,6 +44,9 @@ android {
         jniLibs.srcDir(rootProject.file(".tools/native/sherpa/jniLibs"))
         jniLibs.srcDir(rootProject.file(".tools/native/hymt/jniLibs"))
         assets.srcDir(rootProject.file(".tools/native/assets"))
+        if (providers.gradleProperty("bundledModels").orNull == "true") {
+            assets.srcDir(rootProject.file(".tools/bundled-model-assets"))
+        }
     }
     sourceSets["hyValidation"].jniLibs.srcDir(rootProject.file(".tools/native/hymt-validation/jniLibs"))
     compileOptions {
@@ -63,6 +66,7 @@ android {
             }
         }
     }
+    androidResources { noCompress += "zip" }
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
 }
 kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) } }

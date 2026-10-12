@@ -29,6 +29,7 @@ import com.jd.rc.localtranslate.audio.RecordingService
 import com.jd.rc.localtranslate.core.*
 import com.jd.rc.localtranslate.data.*
 import com.jd.rc.localtranslate.model.ModelState
+import com.jd.rc.localtranslate.model.InstalledModel
 import com.jd.rc.localtranslate.inference.ConversationState
 import com.jd.rc.localtranslate.runtime.*
 import com.jd.rc.localtranslate.ui.*
@@ -60,9 +61,9 @@ class ComposeUiTest {
                     changeMode = { settings.value = settings.value.copy(translationMode = it) })
             }
         }
-        compose.onNodeWithText("语言：译中文").performClick()
-        compose.onNodeWithText("中日").performClick()
-        compose.onNodeWithText("语言：中日").assertExists()
+        compose.onNodeWithText("译中文").performClick()
+        compose.onNodeWithText("中 ↔ 日").performClick()
+        compose.onNodeWithText("中 ↔ 日").assertExists()
         compose.runOnIdle { assertEquals(TranslationMode.ZH_JA, settings.value.translationMode) }
     }
     private val captions = listOf(
@@ -117,6 +118,54 @@ class ComposeUiTest {
         assertTrue("Rendered UI must contain content", colors.size > 100)
         File("build/ui-screenshots").mkdirs()
         File("build/ui-screenshots/$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+    }
+    @Test fun appendedCaptionsFollowUntilUserReadsHistory() {
+        val rows = mutableStateOf((0 until 12).map { captions[0].copy(segmentId = "$it", sourceText = "Row $it", targetText = "译文 $it") })
+        compose.setContent {
+            GlassTheme(UserSettings()) {
+                FoldAppShell(emptyList(), Modifier.fillMaxSize(), navigation = { GlassNavigation(Page.LIVE, it) {} }) {
+                    LiveScreen(LiveState("follow", rows.value, demo = true), RecordingState(), UserSettings(), 4,
+                        {}, {}, {}, {}, {}, {}, {})
+                }
+            }
+        }
+        compose.runOnIdle { rows.value = rows.value + captions[0].copy(segmentId = "next", sourceText = "Newest", targetText = "最新译文") }
+        compose.onNodeWithText("最新译文").assertIsDisplayed()
+        compose.onNodeWithContentDescription("回到最新字幕").assertDoesNotExist()
+        compose.onNodeWithTag("live-captions").performTouchInput { swipeDown() }
+        compose.onNodeWithContentDescription("回到最新字幕").assertIsDisplayed()
+        compose.runOnIdle { rows.value = rows.value + captions[0].copy(segmentId = "later", sourceText = "After drag", targetText = "恢复后译文") }
+        compose.onAllNodesWithText("恢复后译文").assertCountEquals(0)
+        compose.onNodeWithContentDescription("回到最新字幕").performClick()
+        compose.onNodeWithText("恢复后译文").assertIsDisplayed()
+        compose.onNodeWithContentDescription("回到最新字幕").assertDoesNotExist()
+    }
+    @Test @Config(qualifiers = "w360dp-h640dp-mdpi") fun largeFontKeepsCaptionAreaAndStartVisible() {
+        compose.setContent {
+            val density = LocalDensity.current
+            CompositionLocalProvider(LocalDensity provides Density(density.density, 2f)) {
+                GlassTheme(UserSettings()) {
+                    FoldAppShell(emptyList(), Modifier.fillMaxSize(), navigation = { GlassNavigation(Page.LIVE, it) {} }) {
+                        LiveScreen(LiveState(), RecordingState(), UserSettings(), 4, {}, {}, {}, {}, {}, {}, {})
+                    }
+                }
+            }
+        }
+        compose.onNodeWithText("暂无字幕").assertIsDisplayed()
+        compose.onNodeWithText("开始拾音").assertIsDisplayed()
+        assertTrue(compose.onNodeWithTag("live-content").fetchSemanticsNode().boundsInRoot.height >= 96f)
+    }
+    @Test fun modelDetailsKeepTechnicalMetadataOutOfList() {
+        val state = ModelState(installed = listOf(InstalledModel("sensevoice", "fixture-version", "fixture-license", "https://example.org/model", 1024)))
+        compose.setContent { GlassTheme(UserSettings()) { ModelsScreen(state, {}, {}) } }
+        compose.onNodeWithText("https://example.org/model").assertDoesNotExist()
+        compose.onNodeWithText("1 KiB").assertIsDisplayed()
+        compose.onNodeWithContentDescription("SenseVoice Small详情").performClick()
+        compose.onNodeWithText("版本：fixture-version").assertIsDisplayed()
+        compose.onNodeWithText("许可：fixture-license").assertIsDisplayed()
+        compose.onNodeWithText("https://example.org/model").assertIsDisplayed()
+        compose.onNodeWithText("关闭").performClick()
+        compose.onNodeWithText("https://example.org/model").assertDoesNotExist()
     }
     @Test fun renderLightPhone() = render("live-light")
     @Test fun renderDarkPhone() = render("live-dark", dark = true)

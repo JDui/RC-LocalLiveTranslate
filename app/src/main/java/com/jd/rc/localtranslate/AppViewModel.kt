@@ -62,11 +62,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 val sample = demoSamples[row % demoSamples.size]
                 val state = mutableLive.value
                 val segment = "demo-$row"
-                val start = row * 4L * 16_000
+                val start = row * 2_600L * 16
                 val event = when (phase) {
-                    0 -> SubtitleEvent.Transcript(state.sessionId, segment, 0, start, start + 32_000,
+                    0 -> SubtitleEvent.Transcript(state.sessionId, segment, 0, start, start + 10_400,
                         sample.language, sample.source.take(sample.source.length / 2), CaptionStage.PARTIAL)
-                    1 -> SubtitleEvent.Transcript(state.sessionId, segment, 1, start, start + 56_000,
+                    1 -> SubtitleEvent.Transcript(state.sessionId, segment, 1, start, start + 41_600,
                         sample.language, sample.source, CaptionStage.FINAL)
                     2 -> SubtitleEvent.Speaker(state.sessionId, segment, 1, sample.speaker)
                     else -> SubtitleEvent.Translation(state.sessionId, segment, 1, sample.translated(demoMode.target(sample.language)))

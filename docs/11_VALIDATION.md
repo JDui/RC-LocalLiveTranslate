@@ -260,3 +260,13 @@ NDK 29.0.14206865 / CMake 3.22.1 / Clang 21.0.0 从固定 sherpa 提交完成 AR
 - 签名 APK `RC-LocalLiveTranslate-0.1.0-prealpha.3-arm64.apk`：78,918,270 bytes。apksigner 验证通过，与前两版证书一致；ELF / ZIP 16 KB 对齐、必需 JNI / 原生来源 / 无 TTS 检查通过。权重、签名材料、录音与私密日志不提交或发布。
 - 使用隔离 userdata 的最小 API35 模拟器先安装签名 prealpha.2，再以 `install -r` 覆盖安装签名 prealpha.3，均成功；实际启动界面与 versionCode 3 / versionName 已核对，crash buffer 为空。截图 `.tools/emulator-validation/35-prealpha3-release-startup.png`。未执行真实手机升级或带已有模型/历史的大数据升级。
 - 已推送实现提交 `4064299` 与标签 `v0.1.0-prealpha.3`，公开 [GitHub Pre-release](https://github.com/JDui/RC-LocalLiveTranslate/releases/tag/v0.1.0-prealpha.3)；附件名称 / 大小与本地发行包一致。发布时远程 CI run `38243758027` 仍处于原生构建，未声称远程检查通过。
+
+## 本地模型整合构建
+
+四模型内置签名 APK 的自动安装、重启与校验记录见 [19_BUNDLED_LOCAL](19_BUNDLED_LOCAL.md)。156 项主机测试通过，模拟器实际自动安装达到 4/4；产物 717,398,975 bytes，不作为真实语音同传证明。
+
+## UI 审查修正与整合构建支持
+
+本轮重新捕获整合APK四页、菜单、记录详情与200%字体，并修正字幕跟随、字幕空间、模型详情、双向菜单、演示时间与小模型大小。159项完整主机回归通过；会话隔离和大小修订后各36项Compose复核通过。最终Release构建1m17s，lint 0错误/13警告；签名/原生/16KB检查通过。最终本地APK717,415,359 bytes；实际覆盖安装、4/4和Silero632KiB复核通过，无crash记录。报告和验证边界见 [20_UI_REVIEW](20_UI_REVIEW.md)。
+
+此前实现提交4064299的远程CI run38243758027已成功；不能据此声称本轮新提交的CI通过。整合APK保留本地，不修改公开prealpha.3附件。

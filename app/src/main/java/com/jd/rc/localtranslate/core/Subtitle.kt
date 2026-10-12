@@ -3,9 +3,9 @@ package com.jd.rc.localtranslate.core
 enum class SourceLanguage(val label: String) { ZH("中文"), EN("English"), JA("日本語"), UNKNOWN("未知语言") }
 enum class TranslationMode(val label: String, private val first: SourceLanguage?, private val second: SourceLanguage?) {
     TO_ZH("译中文", null, SourceLanguage.ZH),
-    ZH_JA("中日", SourceLanguage.ZH, SourceLanguage.JA),
-    ZH_EN("中英", SourceLanguage.ZH, SourceLanguage.EN),
-    EN_JA("英日", SourceLanguage.EN, SourceLanguage.JA);
+    ZH_JA("中 ↔ 日", SourceLanguage.ZH, SourceLanguage.JA),
+    ZH_EN("中 ↔ 英", SourceLanguage.ZH, SourceLanguage.EN),
+    EN_JA("英 ↔ 日", SourceLanguage.EN, SourceLanguage.JA);
     fun target(source: SourceLanguage): SourceLanguage? = when {
         source == SourceLanguage.UNKNOWN -> null
         first == null -> second.takeUnless { source == it }

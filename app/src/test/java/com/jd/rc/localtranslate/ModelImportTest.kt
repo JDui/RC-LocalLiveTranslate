@@ -36,6 +36,25 @@ class ModelImportTest {
         }
         return Uri.fromFile(file)
     }
+    @Test fun bundledInstallUsesVerifierAndPreservesExistingModel() = runBlocking {
+        val repository = ModelRepository(context)
+        val valid = archive("bundled-valid.zip", "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+        repository.installBundled(mapOf("sensevoice" to { context.contentResolver.openInputStream(valid)!! }))
+        assertEquals("fixture-1", repository.state.value.installed.single().version)
+        repository.installBundled(mapOf("sensevoice" to { error("Existing model must not be reopened") }))
+        assertEquals("fixture-1", repository.state.value.installed.single().version)
+        assertFalse(repository.state.value.busy)
+    }
+    @Test fun bundledInstallRejectsWrongIdentityAndCanRetryFailure() = runBlocking {
+        val repository = ModelRepository(context)
+        val wrong = archive("bundled-wrong.zip", "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", id = "speaker")
+        repository.installBundled(mapOf("sensevoice" to { context.contentResolver.openInputStream(wrong)!! }))
+        assertTrue(repository.state.value.installed.isEmpty())
+        assertFalse(repository.state.value.busy)
+        val valid = archive("bundled-retry.zip", "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+        repository.installBundled(mapOf("sensevoice" to { context.contentResolver.openInputStream(valid)!! }))
+        assertEquals("sensevoice", repository.state.value.installed.single().id)
+    }
     @Test fun verifiedImportSurvivesFailedReplacementAndCanBeDeleted() = runBlocking {
         val repository = ModelRepository(context)
         repository.import(archive("valid.zip", "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", "good"))

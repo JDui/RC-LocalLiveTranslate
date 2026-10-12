@@ -1,5 +1,5 @@
 #requires -Version 7.0
-param([string]$Version = '0.1.0-prealpha.3', [string]$Apk = '')
+param([string]$Version = '0.1.0-prealpha.3', [string]$Apk = '', [switch]$BundledModels, [string]$OutputFile = '')
 $ErrorActionPreference = 'Stop'
 if ($Version -notmatch '^\d+\.\d+\.\d+-prealpha\.\d+$') { throw 'An explicit prealpha version is required' }
 $root = Split-Path $PSScriptRoot -Parent
@@ -12,6 +12,16 @@ $aapt = Join-Path $sdk "build-tools/36.0.0/aapt$suffix"
 $apksigner = Join-Path $sdk ('build-tools/36.0.0/apksigner' + $(if ($IsWindows) { '.bat' } else { '' }))
 $keytool = if (Test-Path -LiteralPath (Join-Path $tools 'jdk')) { Join-Path $tools "jdk/bin/keytool$suffix" } else { Join-Path $env:JAVA_HOME "bin/keytool$suffix" }
 foreach ($required in @($Apk, $aapt, $apksigner, $keytool)) { if (!(Test-Path -LiteralPath $required)) { throw "Missing release input/tool: $required" } }
+if ($BundledModels) {
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $archive = [IO.Compression.ZipFile]::OpenRead((Resolve-Path -LiteralPath $Apk))
+    try {
+        foreach ($id in @('sensevoice', 'silero-vad', 'speaker', 'hy-mt2')) {
+            $entry = $archive.GetEntry("assets/bundled-models/$id.zip")
+            if (!$entry -or $entry.Length -eq 0) { throw "Missing bundled model: $id" }
+        }
+    } finally { $archive.Dispose() }
+}
 $badging = & $aapt dump badging $Apk
 if ($LASTEXITCODE -ne 0 -or !($badging | Select-String -SimpleMatch "name='com.jd.rc.localtranslate'") -or
     !($badging | Select-String -SimpleMatch "versionName='$Version'") -or ($badging | Select-String '^application-debuggable')) {
@@ -19,7 +29,9 @@ if ($LASTEXITCODE -ne 0 -or !($badging | Select-String -SimpleMatch "name='com.j
 }
 $releases = Join-Path $tools 'releases'
 New-Item -ItemType Directory -Force -Path $releases | Out-Null
-$output = Join-Path $releases "RC-LocalLiveTranslate-$Version-arm64.apk"
+$variant = if ($BundledModels) { "-bundled" } else { "" }
+$output = Join-Path $releases "RC-LocalLiveTranslate-$Version-arm64$variant.apk"
+if ($OutputFile) { $output = [IO.Path]::GetFullPath($OutputFile) }
 if (Test-Path -LiteralPath $output) { throw 'Release artifact exists; preserve it and use a new version for new artifacts' }
 $signing = Join-Path $tools 'signing'
 if (!(Test-Path -LiteralPath $signing)) {
