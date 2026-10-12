@@ -4,6 +4,12 @@
 
 AudioRecord 单声道 PCM16，优先 16 kHz；设备不支持时实际采样率录入并重采样。采集按约 20–40 ms 帧进入有界缓冲区，另留最近 20–30 秒候选回看窗口（待测）。Silero VAD 保留前后语音 padding，限制超长句，避免开头被截断。维护 sampleOffset 半开区间、麦克风路由变化和暂停恢复事件。
 
+当前实现先尝试 16 kHz，再尝试 48 / 44.1 / 32 / 8 kHz；每个未成功启动的 AudioRecord 都释放，权限撤销不作为格式失败继续重试。输入格式指 AudioRecord 提供的逻辑采样率，不声称是硬件 ADC 原生采样率。
+
+采集线程只将原始帧 `trySend` 到容量 32 的 DSP 队列，独立 worker 使用 AndroidX Media3 1.11.1 SonicAudioProcessor 转到 16 kHz，speed / pitch 保持 1，再将不超过 320 samples 的帧非阻塞投递给推理。暂停、停止及输入切换冲刷重采样尾帧；原始帧丢失时结束旧重采样流，不跨缺口插值。时间轴由累计输入样本按有理数比例换算，避免逐帧取整漂移。候选 ASR 环目前为 10 秒；20–30 秒目标仍需内存与准确率实测后决定。
+
+AudioRouting 回调只更新输入设备类型，采集线程检测变化后开启新的输入 epoch，第一份成功投递的输出帧带重新分段标记，连续 sampleOffset 也会冲刷 VAD。`ERROR_DEAD_OBJECT` 在任意 30 秒内最多自动重开 3 次；恢复耗时按单调时钟保留为缺失区间，不补写音频。普通暂停不计入录音样本时间。设备路由回调与硬件音频的边界精度、蓝牙采集质量及长时重采样仍须真机验收。
+
 ## SenseVoice 与自动语言
 
 主候选 sherpa-onnx SenseVoiceSmall INT8，language=auto；中、英、日三语为产品验收范围。重要的是：它是按段语音识别，官方 Android simulated streaming 通过部分音频重识别产生临时文本，**不是原生逐 token 的零延迟 Streaming ASR**。
@@ -13,7 +19,7 @@ AudioRecord 单声道 PCM16，优先 16 kHz；设备不支持时实际采样率�
 - 无法在短片段可靠判断语言时仅展示原文并推迟翻译；不得把 unknown 默认为 English。
 - 2025-09-09 SenseVoice INT8 粤语增强模型的官方说明：**不支持标点**。分句/标点应独立处理，或对比其他经审计模型。
 
-## SpeakerTracker（须实现）
+## SpeakerTracker（已实现，效果待校准）
 
 sherpa-onnx 提供 speaker embedding、offline diarization 与 Android 样例，但 offline diarization **不能直接当作无限时长在线跟踪**。
 
@@ -24,8 +30,18 @@ sherpa-onnx 提供 speaker embedding、offline diarization 与 Android 样例，
 5. 可选后台滑窗 segmentation 复查句内换人点，再使用 revision 回填旧字幕。
 6. 对同时讲话、很相似的声线、远距离及儿童短句标出低置信，不声称能还原每个人的重叠语音内容。
 
+当前实现保存最近 256 份归一化 embedding，仅在声纹 worker 内存中保留；上限维度 4096，结束 worker 后清空。短于 1.2 秒、非法向量、非有限时长、重复的窗口内 segmentId 不增加确认计数。匹配 / 新声音 / 歧义阈值为 0.65 / 0.45 / 0.08。每 16 份接受证据检查一次，单次最多一项结构修订，修订后至少 64 份接受证据冷却。
+
+合并要求两个已确认簇各至少 4 份近期证据，质心相似度至少 0.90，互相匹配及合并后所有证据的凝聚度至少 0.82。保留较早标签；独立会话级合并命令更新所有旧字幕及早到事件，包括超出 embedding 窗口的字幕。合并不更改文本、译文、采样时间或 ASR revision。
+
+拆分使用固定 4 轮余弦二分，只在两个模式各至少 4 份证据、模式间相似度不高于 0.45、全部证据凝聚度至少 0.82 且匹配余量至少 0.08 时接受。原始锚点明确更接近的模式保留旧标签，否则拒绝拆分。只有仍有 embedding 的语段可重新分配；不能重建更早语段的真实身份。标签按会话累计最多分配 16 个，包含退休标签，永不复用；达到上限时新声音保持 unknown。
+
+算法不使用语种或文本身份特征，speaker revision 在会话内单调递增。`SPEAKER_TRACKING` 单独采样软件追踪耗时，不与 `SPEAKER` 原生抽取计时混合。上述参数是合成向量回归可验证的软件规则，不代表实际 CAM++ 的准确率。句内换人 segmentation、重叠语音恢复及真人跨语言校准仍未实现 / 验收，详见 ADR-0004。
+
 ## 过载行为
 
 ASR 是高于字幕润色的优先任务；背景 speaker 修订最先降级。禁止无限 Channel 和录音线程等待锁。保留可观测队列长度与丢帧计数，确保错误不会被 UI 隐藏。
+
+当前已实现热状态及内存分档：中度热状态降低临时字幕频率并暂停声纹；严重热状态或低内存只保留最终原文；临界状态停止采集并取消积压推理。暂停的可选引擎由其 worker 在当前调用结束后释放，压力持续降低 30 秒后才恢复新任务。降级期间没有翻译的旧语段标记不可用，不自动反复补译；短句及暂停声纹的语段保持 unknown。省电档位保持翻译、暂停声纹，并降低临时字幕频率。阈值是初始保护参数，不是经过 30–60 分钟真机热机验证的结论；详细规则见 10_DEVELOPMENT。
 
 来源：[SenseVoice 预训练模型](https://k2-fsa.github.io/sherpa/onnx/sense-voice/pretrained.html)、[Android Speaker Diarization](https://k2-fsa.github.io/sherpa/onnx/speaker-diarization/android.html)。

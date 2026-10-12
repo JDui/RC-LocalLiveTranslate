@@ -1,6 +1,6 @@
 # 02 — 技术栈与版本策略
 
-**Status: Accepted technology choices; exact build tool versions pending first verified Android build.**
+**Status: Native inference integration in progress; JDK 17, Gradle 8.11.1, AGP 8.10.1, Kotlin 2.4.10 and Compose BOM 2025.05.01. Validation is tracked separately in 11_VALIDATION.md.**
 
 | 方面 | 选定方案 | 备注 |
 | --- | --- | --- |
@@ -19,7 +19,11 @@
 
 ### 构建与锁版本规则
 
-建议使用 Version Catalog / libs.versions.toml、Gradle Wrapper、固定 SHA/Release tag 的原生依赖。Compose 官方 BOM 文档现示例 2026.08.00，Foxlet 当前核实 v0.5.0。**Kotlin、AGP、Gradle、sherpa-onnx 的具体组合必须在首个 Gradle 工程使用 Android Studio 实际编译后锁定**，避免文档宣称一个未验证的兼容矩阵；禁止动态 latest / + 版本。
+0.1.0 使用 Version Catalog / libs.versions.toml 和 Gradle Wrapper；实际构建结果记录在 11_VALIDATION.md。Compose BOM 保守固定为 2025.05.01。已接入 Foxlet 0.5.0 AAR；sherpa-onnx 1.13.8 JNI 与 Kotlin API 固定到提交 `11afbd009a7f8c08f4bcf2fc1b265d0df4670fbf`，JNI 由 NDK 29.0.14206865 / CMake 3.22.1 构建，关闭 TTS / 离线 diarization，保留 speaker embedding。开发依赖经 `scripts/bootstrap-native.ps1` 放入忽略目录 `.tools/native`。构建期联网不等于应用运行期联网；不调用 SDK 的下载或更新接口，APK 仍无 INTERNET。禁止动态 latest / + 版本。原生分发边界见 ADR-0005。
+
+Foxlet 发行包使用 Kotlin 2.4 元数据，故编译器与 Compose compiler plugin 同步到 2.4.10。Room 2.7.1 的 kapt classpath 显式使用同版本 `kotlin-metadata-jvm`，解决原处理器最多读取 2.2 元数据的问题；数据库 schema 未变。Gradle 8.11.1 目前仍受支持但有未来弃用提示，后续工具链回归须保留此提示而非宣称零警告。
+
+音频回退重采样固定使用 AndroidX Media3 common 1.11.1 的 SonicAudioProcessor，默认 speed / pitch 均为 1；仅引入 common，不引入播放器或网络数据源。音频时钟与流边界由独立前端维护，长时实际识别质量仍需设备数据验证。来源：[固定版本重采样接口](https://github.com/androidx/media/blob/1.11.1/libraries/common/src/main/java/androidx/media3/common/audio/SonicAudioProcessor.java)。
 
 ABI、minSdk 与 CPU 指令回退以最终打包原生库为准；Android 16 KB page size 兼容列入专门验证项。暂不把 NNAPI/厂商 NPU 作为必需，CPU 为 fallback。Python 仅用于开发/离线评测，不在手机端运行。
 

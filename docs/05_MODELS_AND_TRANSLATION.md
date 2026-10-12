@@ -13,14 +13,14 @@
 
 | 模块 | 候选制品 | 备注 |
 | --- | --- | --- |
-| ASR + LID | sherpa-onnx SenseVoiceSmall INT8 2025-09-09，ONNX 模型约 226 MB | 中英日；无标点风险 |
-| VAD | sherpa-onnx Silero VAD | 待确定具体 tag/hash |
-| Speaker | sherpa speaker embedding ONNX | 必须先测试跨语言同一人的稳定性 |
+| ASR + LID | sherpa-onnx SenseVoiceSmall 原版 INT8 2024-07-17 | 本地三语 TTS auto 标签通过；2025 粤语微调候选全部返回 yue，未接受为基线 |
+| VAD | sherpa-onnx Silero VAD asset 271935959 | 版本 / 发布者摘要已锁定，主机真实静音 / TTS 检查通过 |
+| Speaker | 3D-Speaker CAM++ 中文 common ONNX asset 198893103 | 主机加载和 192 维向量通过；跨语言同人稳定性未验收 |
 | Speaker segmentation | sherpa-onnx / pyannote 兼容制品 | 可选后台增强；资源开销未知 |
-| MT en→zh | Mozilla models through Foxlet | Foxlet 文档约 52 MB |
-| MT ja→en | Mozilla models through Foxlet | Foxlet 文档约 55 MB |
+| MT en→zh | Mozilla 2.2 / Foxlet v0.5.0 固定目录 | 已下载校验并打包，原始权重 / 词表 51,934,991 bytes |
+| MT ja→en | Mozilla 2.1 / Foxlet v0.5.0 固定目录 | 已下载校验并打包，原始权重 / 词表 54,769,181 bytes |
 
-这里的 MB 指静态模型参考体积，不是峰值 PSS。所有模型的**具体下载制品、哈希、许可和是否允许重新分发尚未锁定**。
+静态模型体积不是峰值 PSS。五套评测包的 URL / 版本 / 摘要依据与权重条款已登记，真实主机导入通过；ASR 选型依据见 [ADR-0003](adr/0003-multilingual-model-baseline.md)，详情见 [模型准备](14_MODEL_PREPARATION.md)。CAM++ 摘要为官方 HTTPS 制品的本次观察值，不是发布者提供值；全部模型的 Android 推理、真人质量及完整再分发合规尚未验收。
 
 ## 资源管理与离线保证
 

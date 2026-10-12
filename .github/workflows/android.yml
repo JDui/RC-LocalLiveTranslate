@@ -1,0 +1,36 @@
+name: Android
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Install pinned native build tools
+        run: sdkmanager 'ndk;29.0.14206865' 'cmake;3.22.1'
+      - run: chmod +x gradlew
+      - name: Prepare pinned offline native SDKs
+        shell: pwsh
+        run: ./scripts/bootstrap-native.ps1
+      - run: ./gradlew assembleDebug testDebugUnitTest lintDebug assembleDebugAndroidTest --console=plain
+      - name: Check native alignment
+        shell: pwsh
+        run: ./scripts/verify-native.ps1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-debug-and-reports
+          path: |
+            app/build/outputs/apk/debug/*.apk
+            app/build/reports/
+            app/build/ui-screenshots/

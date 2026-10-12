@@ -1,0 +1,10 @@
+AndroidX Media3 common 1.11.1
+SonicAudioProcessor and Sonic: Copyright (C) 2017 The Android Open Source Project
+Sonic: Copyright (C) 2010 Bill Cox, Sonic Library
+License: Apache License 2.0 (see LICENSE.txt)
+Source: https://github.com/androidx/media/tree/1.11.1/libraries/common
+Sonic implementation: https://github.com/androidx/media/blob/1.11.1/libraries/common/src/main/java/androidx/media3/common/audio/Sonic.java
+
+Only the common library is included. RC LocalLiveTranslate uses local mono PCM16
+resampling; it does not instantiate a player, network source, or model downloader.
+Transitive dependency license auditing remains part of the release checklist.

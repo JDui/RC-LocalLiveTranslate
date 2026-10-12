@@ -1,0 +1,58 @@
+{
+  "licenses": {
+    "funasr": { "name": "LICENSE.FunASR.txt", "size": 5306, "sha256": "7dba975a2069691db4992b0592d70828b330d2f8a30a71450f4e152a554e84f8", "url": "https://raw.githubusercontent.com/modelscope/FunASR/e7e61293d308f4342ab9307895e710e4b51b949c/MODEL_LICENSE" },
+    "silero": { "name": "LICENSE.Silero.txt", "size": 1075, "sha256": "2e63e9a38b6e8fc0c7bc37ce174caca1862870856c6daf5697cfb785e925520b", "url": "https://raw.githubusercontent.com/snakers4/silero-vad/1e261b036686cd0017d500ee96acd1c4ba572a9d/LICENSE" },
+    "apache": { "name": "LICENSE.Apache-2.0.txt", "size": 11357, "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4", "url": "https://raw.githubusercontent.com/modelscope/3D-Speaker/065629c313eaf1a01c65c640c46d77e61e9607b4/LICENSE" },
+    "aslpCard": { "name": "NOTICE.ASLP-model-card.md", "size": 7822, "sha256": "6c618e2068edff462bb78437de43ffbf372ac97cb748d60816ba2beeef25b2ef", "url": "https://huggingface.co/ASLP-lab/WSYue-ASR/raw/4a74a91430485d7456cb786f1d0ff0aba1185ded/README.md" }
+  },
+  "models": [
+    {
+      "id": "sensevoice", "version": "sherpa-int8-2024-07-17", "license": "LicenseRef-FunASR-Model-1.1",
+      "sourceURL": "https://k2-fsa.github.io/sherpa/onnx/sense-voice/pretrained.html",
+      "authors": "Alibaba Group / FunAudioLLM (SenseVoiceSmall); k2-fsa sherpa-onnx (ONNX INT8 conversion)",
+      "licenseEvidence": [ "https://huggingface.co/FunAudioLLM/SenseVoiceSmall" ],
+      "redistributionStatus": "Local evaluation baseline. FunASR Model License 1.1 retained; Android/human accuracy and full public distribution review remain pending.",
+      "licenseKeys": [ "funasr" ],
+      "download": { "name": "sensevoice-2024-07-17.tar.bz2", "size": 163002883, "sha256": "7d1efa2138a65b0b488df37f8b89e3d91a60676e416f515b952358d83dfd347e", "digestEvidence": "GitHub release asset 288366523 publisher digest; updated 2025-09-01T08:32:59Z", "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17.tar.bz2" },
+      "files": [
+        { "name": "model.onnx", "size": 239233841, "sha256": "c71f0ce00bec95b07744e116345e33d8cbbe08cef896382cf907bf4b51a2cd51", "archivePath": "sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/model.int8.onnx" },
+        { "name": "tokens.txt", "size": 315894, "sha256": "f449eb28dc567533d7fa59be34e2abca8784f771850c78a47fb731a31429a1dc", "archivePath": "sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/tokens.txt" }
+      ]
+    },
+    {
+      "id": "silero-vad", "version": "sherpa-asset-271935959", "license": "MIT",
+      "sourceURL": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx",
+      "authors": "Silero Team; k2-fsa sherpa-onnx compatible release asset",
+      "licenseEvidence": [ "https://github.com/snakers4/silero-vad" ],
+      "redistributionStatus": "MIT declaration retained. Artifact identified by release asset ID / digest, not guessed Silero semantic version.",
+      "licenseKeys": [ "silero" ],
+      "download": { "name": "silero_vad.onnx", "size": 643854, "sha256": "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6", "digestEvidence": "GitHub release asset 271935959 publisher digest; updated 2025-07-11T07:04:32Z", "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx" },
+      "files": [ { "name": "silero_vad.onnx", "size": 643854, "sha256": "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6" } ]
+    },
+    {
+      "id": "speaker", "version": "campplus-asset-198893103", "license": "Apache-2.0",
+      "sourceURL": "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx",
+      "authors": "Alibaba Tongyi Lab / 3D-Speaker / iic CAM++; k2-fsa sherpa-onnx (ONNX conversion)",
+      "licenseEvidence": [ "https://www.modelscope.cn/models/iic/speech_campplus_sv_zh-cn_16k-common", "https://github.com/modelscope/3D-Speaker" ],
+      "redistributionStatus": "Upstream model card declares Apache License 2.0. Cross-language speaker stability and full distribution review remain unvalidated.",
+      "licenseKeys": [ "apache" ],
+      "download": { "name": "3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx", "size": 28281138, "sha256": "f682b514c05d947ee3fa91cd6ec6c5c7543479a128373fa29b1faedccd21fd11", "digestEvidence": "Observed SHA-256 from official HTTPS asset on 2026-10-09. GitHub asset 198893103 has no publisher digest; updated 2024-10-14T03:41:20Z.", "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx" },
+      "files": [ { "name": "speaker.onnx", "size": 28281138, "sha256": "f682b514c05d947ee3fa91cd6ec6c5c7543479a128373fa29b1faedccd21fd11" } ]
+    }
+  ],
+  "asrAlternatives": [
+    {
+      "id": "sensevoice", "version": "sherpa-int8-2025-09-09", "license": "LicenseRef-FunASR-Model-1.1 AND Apache-2.0",
+      "sourceURL": "https://k2-fsa.github.io/sherpa/onnx/sense-voice/pretrained.html",
+      "authors": "Alibaba Group / FunAudioLLM (SenseVoiceSmall); ASLP-lab (WSYue fine-tune); k2-fsa sherpa-onnx (ONNX INT8 conversion)",
+      "licenseEvidence": [ "https://huggingface.co/FunAudioLLM/SenseVoiceSmall", "https://huggingface.co/ASLP-lab/WSYue-ASR/blob/4a74a91430485d7456cb786f1d0ff0aba1185ded/README.md" ],
+      "redistributionStatus": "Rejected as automatic zh/en/ja baseline: all three local TTS language tags were yue on 2026-10-09. Base FunASR and fine-tuner Apache declarations retained; combined redistribution review pending.",
+      "licenseKeys": [ "funasr", "apache", "aslpCard" ],
+      "download": { "name": "sensevoice-2025-09-09.tar.bz2", "size": 165783878, "sha256": "7305f7905bfcf77fa0b39388a313f3da35c68d971661a65475b56fb2162c8e63", "digestEvidence": "GitHub release asset 291346584 publisher digest", "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09.tar.bz2" },
+      "files": [
+        { "name": "model.onnx", "size": 237115547, "sha256": "12ca1a2ae7ecf3e0019ef2822307ee0b5cadc9196569e379b4c4026f8205276d", "archivePath": "sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09/model.int8.onnx" },
+        { "name": "tokens.txt", "size": 315894, "sha256": "f449eb28dc567533d7fa59be34e2abca8784f771850c78a47fb731a31429a1dc", "archivePath": "sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09/tokens.txt" }
+      ]
+    }
+  ]
+}
