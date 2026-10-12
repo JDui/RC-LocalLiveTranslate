@@ -26,7 +26,7 @@
 | 键盘、弹窗与输入 | 主机弹窗语义 / 几何及独立窗口截图，生产采用 imePadding | 真实 IME、焦点 / Tab、鼠标与分屏调整 |
 | 流畅度 | 静态 native graphics 组件渲染 | 开合动画、实际帧率、卡顿与系统动画减少 |
 
-本轮最终 128 项主机测试通过。主机截图为 Android Canvas / Compose 实际绘制，字幕为合成数据；不是设计稿，也不是设备 PixelCopy。窗口收窄测试改变 app viewport，不是折叠设备。报告没有真实录音或模型性能数字。
+折叠功能双栏阶段为 128 项主机测试通过；首个 prealpha 的最终普通回归为 142 项，当前发行证据见 11_VALIDATION。主机截图为 Android Canvas / Compose 实际绘制，字幕为合成数据；不是设计稿，也不是设备 PixelCopy。窗口收窄测试改变 app viewport，不是折叠设备。报告没有真实录音或模型性能数字。
 
 整体完成仍必须满足 01_REQUIREMENTS 的 R1–R8 和 08_ROADMAP 的设备 / 离线 / 准确率 / 热机 / 合规门槛。此矩阵不缩小原目标，不用主机通过替代设备验收。
 

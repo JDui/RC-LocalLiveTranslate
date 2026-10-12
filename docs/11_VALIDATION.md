@@ -16,6 +16,14 @@
 
 2026-10-12 推送 `4b96d34` 后的 [运行 38200164627](https://github.com/JDui/RC-LocalLiveTranslate/actions/runs/38200164627) 在 SDK 安装步骤失败：setup-android v3 默认请求 `tools`，sdkmanager 报 `Failed to find package 'tools'`。原生准备、Gradle 和测试均未执行，不计为编译或测试失败 / 成功。按 [安装动作上游说明](https://github.com/android-actions/setup-android#the-deprecated-tools-package) 显式设置 `packages: platform-tools`，保留固定 NDK / CMake；修复的远程结果另行核对。
 
+修复提交 `9e0e160` 的 [运行 38200367387](https://github.com/JDui/RC-LocalLiveTranslate/actions/runs/38200367387) 已完成、结论 success：Linux SDK 安装、固定无 TTS 原生准备、Debug 编译 / 普通主机测试 / lint / 设备测试 APK 构建、APK 原生检查和制品上传均通过。Gradle 日志为 BUILD SUCCESSFUL in 5m 33s，testDebugUnitTest 实际执行；六库 ELF / ZIP 16 KB、禁用导出及必需 JNI / SOURCE 检查逐项 PASS。与标签相比只修改 CI 和验证文档，应用源码未变；这仍不是设备端 instrumentation 或实际权重推理证明。
+
+远程另有非失败提示：部分 Actions 的 Node 20 入口由托管服务强制使用 Node 24，setup-java v4 已弃用；ubuntu-latest 公告将迁移到 Ubuntu 26。这些不隐藏、不当作本轮失败，也不据本轮通过承诺未来托管环境不变化。
+
+### 公开 prealpha
+
+2026-10-12 11:46（Asia/Shanghai）[v0.1.0-prealpha.1](https://github.com/JDui/RC-LocalLiveTranslate/releases/tag/v0.1.0-prealpha.1) 已公开。GitHub API 核对 isDraft=false、isPrerelease=true，标签 / targetCommitish 为 `4b96d349c4144df14cb9f7cc951cc3c27cf1ae7e`，唯一 APK 附件为 uploaded、82,174,797 bytes，下载路径使用正式版本标签。模型、音频、签名私钥 / 口令未上传。公开测试交付已完成，但项目整体设备、准确率、OEM、热机和完整合规门禁仍未关闭。
+
 ## 已完成
 
 | 项目 | 结果 | 证据 |
@@ -165,5 +173,5 @@ NDK 29.0.14206865 / CMake 3.22.1 / Clang 21.0.0 从固定 sherpa 提交完成 AR
 - 热 / 低内存动态降级及性能档位已实现并有主机回归，但触发阈值、实际模型的内存峰值 / 释放 / 重载以及 30–60 分钟热机均未验收。长会话 speaker 全历史合并 / 有界近期拆分已实现，真人效果和更早语段的拆分重建没有证据。
 - 五套真实基线包已通过主机生产导入器，三个语音模型已在 Windows x64 运行；Android JNI、损坏大模型、存储耗尽、系统 SAF 文档提供者和手机 native 加载仍未验收。
 - 未进行 Android 9–17 设备矩阵、16 KB page size 实机兼容、飞行模式真实推理、PSS/RTF/延迟、30–60 分钟热机或电池测试。
-- GitHub Actions 已推送运行；首轮在 SDK 安装失败，修复后状态见上述记录，不声称远程 CI 成功。
-- 未创建公开 Release，未替仓库所有者指定源码许可证。
+- GitHub Actions 的主机 / 构建流程通过；没有 Android 设备测试证据。
+- prealpha 已公开；未替仓库所有者指定源码许可证，未完成独立权重与题材权利审核。

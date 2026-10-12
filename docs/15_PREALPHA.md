@@ -2,6 +2,8 @@
 
 这是首次公开测试候选，不是已通过准确率、性能或 OEM 实机验收的稳定版本。仅支持 Android 9 / API 28 及以上的 ARM64 设备。安装包不含模型权重，也不申领 INTERNET / ACCESS_NETWORK_STATE。
 
+2026-10-12 已公开为 GitHub 预发布（非草稿），标签指向实现提交 `4b96d34`。后续 CI 配置提交 `9e0e160` 的 Linux 构建通过；两者应用源码相同。发行与远程验证详情见 [11_VALIDATION](11_VALIDATION.md)。
+
 ## 使用
 
 1. 从 [本仓库 GitHub Release](https://github.com/JDui/RC-LocalLiveTranslate/releases/tag/v0.1.0-prealpha.1) 下载 `RC-LocalLiveTranslate-0.1.0-prealpha.1-arm64.apk`（82,174,797 bytes，约 78.4 MiB）。允许浏览器 / 文件管理器安装此测试包；来源应为本仓库，不使用第三方改包。
