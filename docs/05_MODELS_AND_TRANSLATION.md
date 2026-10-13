@@ -23,7 +23,7 @@
 
 ## 资源管理与离线保证
 
-- 发行 APK 可以不请求 INTERNET 权限；模型经 Storage Access Framework 从用户本地文件导入，允许完全断网部署。
+- 发行 APK 不含权重，模型页可主动一键下载缺失模型；INTERNET仅用于HTTPS权重下载。模型亦可经Storage Access Framework从本地文件导入，准备后可完全断网推理，见ADR-0007。
 - 自定义 model manifest 记录 id、kind、version、sourceURL、sha256、size、license、requiredFiles、abi、language、quantization、benchmark。
 - 解包到私有临时目录，逐项 SHA-256 校验后原子切换；错误或空间不足可恢复旧模型。
 - 模型界面支持缺失/安装中/校验失败/已就绪/加载中/占用中/可删除状态；不能在正在推理时删除所需文件。

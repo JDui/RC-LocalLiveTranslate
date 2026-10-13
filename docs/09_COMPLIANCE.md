@@ -28,7 +28,7 @@
 
 本地重采样只使用 Media3 common，不引入 ExoPlayer / 数据源模块。显式移除 common 清单带来的 ACCESS_NETWORK_STATE，应用不需要读取网络状态。`assets/licenses/media3-1.11.1` 保留上游 Apache-2.0 全文和源码路径，包括 Sonic 的 AOSP 与 Bill Cox 版权声明；传递依赖尚未作为完整发行清单验收。来源：[固定版本 Sonic](https://github.com/androidx/media/blob/1.11.1/libraries/common/src/main/java/androidx/media3/common/audio/Sonic.java)。
 
-默认不需要 INTERNET、无用户账户/遥测/云端推理。仅将字幕记录留本机 Room（可关闭/删除）；原始 PCM 不写入永久存储也不写日志；音频临时窗口会释放。Speaker A/B 仅是当前会话聚类标签，不是真实身份证明或跨会话追踪指纹。
+prealpha.4申领INTERNET，仅用于用户主动触发的固定模型HTTPS下载；不读取网络状态、不上传音频/字幕，无用户账户/遥测/云端推理。外部模型源会看到下载请求IP，详见[ADR-0007](adr/0007-user-initiated-model-downloads.md)。仅将字幕记录留本机 Room（可关闭/删除）；原始 PCM 不写入永久存储也不写日志；音频临时窗口会释放。Speaker A/B 仅是当前会话聚类标签，不是真实身份证明或跨会话追踪指纹。
 
 运行诊断仅保留有界内存统计，不自动写文件；用户显式 SAF 导出后才写入选定位置。设备测试工具另在测试应用私有目录写报告。字段包括机型 / SoC / SDK、运行库版本、既有模型预期哈希、耗时、队列计数、内存、热状态及电池，不包含序列号 / Android ID、PCM、字幕、译文、embedding、来源 URL、私有路径或异常消息。导出的机型和性能信息仍可能关联设备，分享前应审阅；诊断不新增权限或网络访问。
 
@@ -46,6 +46,7 @@ GUI Macrobenchmark 使用独立测试包和独立目标包，正式应用不新�
 | 悬浮字幕（后续） | SYSTEM_ALERT_WINDOW 单独授权，不影响普通全屏使用 |
 | 内部音频（后续） | MediaProjection + AudioPlaybackCapture，音源必须允许抓取 |
 | 模型导入 | SAF 选择本地文件，无需广泛存储权限 |
+| 模型下载 | INTERNET，仅用户主动下载固定权重；禁用明文流量，校验大小及SHA，支持取消与失败重试 |
 
 Android 受限制的麦克风前台服务一般不能从任意后台状态/BOOT_COMPLETED 创建；用户必须通过可见界面明确开启录音。停止入口始终可达。监测 Android 17 的 App memory limit 新行为。
 

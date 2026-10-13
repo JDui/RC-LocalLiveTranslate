@@ -30,7 +30,7 @@ foreach ($item in @(@($release, 'com.jd.rc.localtranslate'), @($target, 'com.jd.
             if (!$profile -or $profile.GetAttribute('shell', $ns) -ne 'true') { throw 'Benchmark target is not profileable' }
         } elseif ($profile) { throw 'Release application unexpectedly enables profiling' }
         foreach ($permission in $manifest.manifest.SelectNodes('uses-permission | uses-permission-sdk-23')) {
-            if ($permission.GetAttribute('name', $ns) -in @('android.permission.INTERNET', 'android.permission.ACCESS_NETWORK_STATE',
+            if ($permission.GetAttribute('name', $ns) -in @('android.permission.ACCESS_NETWORK_STATE',
                 'android.permission.READ_EXTERNAL_STORAGE', 'android.permission.WRITE_EXTERNAL_STORAGE', 'android.permission.MANAGE_EXTERNAL_STORAGE')) {
                 throw 'Application target has forbidden runtime permissions'
             }

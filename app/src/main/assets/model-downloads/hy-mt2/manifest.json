@@ -1,0 +1,25 @@
+{
+  "abi": "arm64-v8a",
+  "version": "tencent-hymt2-1.8b-stq1-9df5c824",
+  "license": "Apache-2.0",
+  "id": "hy-mt2",
+  "quantization": "STQ1_0",
+  "sourceURL": "https://huggingface.co/tencent/Hy-MT2-1.8B-1.25Bit-GGUF/tree/9df5c824a00a744fb0512a29c640466f4d97dfb0",
+  "files": [
+    {
+      "size": 461860800,
+      "path": "model.gguf",
+      "sha256": "cc497fe8f033b52b3b8b00a7669e9661435432f9d4cd43f7ed24400c01507a93"
+    },
+    {
+      "size": 11655,
+      "path": "LICENSE.txt",
+      "sha256": "75501487ca937793e0107d5c495ab1632d247f0df481ab6a383ae1ad0ee3b5d7"
+    },
+    {
+      "size": 751,
+      "path": "SOURCE.json",
+      "sha256": "d91673d7146588a07ae58793ef6ac9ffcaf3e9a5413e42208d6c4e6687a28f59"
+    }
+  ]
+}

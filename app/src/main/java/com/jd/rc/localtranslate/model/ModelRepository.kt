@@ -28,7 +28,8 @@ val modelSlots = listOf(
 data class InstalledModel(val id: String, val version: String, val license: String,
     val source: String, val sizeBytes: Long)
 data class ModelState(val installed: List<InstalledModel> = emptyList(), val busy: Boolean = false,
-    val message: String? = null, val inUse: Boolean = false)
+    val message: String? = null, val inUse: Boolean = false, val downloading: Boolean = false,
+    val downloadedBytes: Long = 0, val downloadTotalBytes: Long = 0)
 
 data class ModelBundle(val id: String, val directory: File, val files: Map<String, File>, val hashes: Map<String, String>) {
     fun required(name: String): File = files[name]?.takeIf { it.isFile && it.length() > 0 }
@@ -47,10 +48,57 @@ class ModelRepository(private val context: Context) {
     private var leases = 0
     private val mutable = MutableStateFlow(ModelState())
     val state = mutable.asStateFlow()
-    suspend fun refresh() = withContext(Dispatchers.IO) { mutex.withLock { refreshLocked() } }
+    suspend fun refresh() = withContext(Dispatchers.IO) { mutex.withLock {
+        context.cacheDir.listFiles()?.filter { it.isDirectory && it.name.startsWith("model-download-") }?.forEach { it.deleteRecursively() }
+        refreshLocked()
+    } }
     suspend fun import(uri: Uri) = withContext(Dispatchers.IO) {
         mutex.withLock { importLocked({ context.contentResolver.openInputStream(uri) }) }
     }
+    suspend fun downloadMissing() = withContext(Dispatchers.IO) { mutex.withLock {
+        if (leases > 0) {
+            mutable.value = mutable.value.copy(message = "请先停止会话，再下载模型。")
+            return@withLock
+        }
+        refreshLocked()
+        val downloader = ModelDownloads(context)
+        val missing = downloader.catalog().filter { model -> mutable.value.installed.none { it.id == model.id } }
+        if (missing.isEmpty()) return@withLock
+        val folder = File(context.cacheDir, "model-download-${UUID.randomUUID()}").apply { mkdirs() }
+        val total = missing.sumOf { it.files.sumOf { file -> file.size } }
+        var bytes = 0L
+        var lastUpdate = 0L
+        mutable.value = mutable.value.copy(busy = true, downloading = true, downloadedBytes = 0,
+            downloadTotalBytes = total, message = "正在下载缺失模型…")
+        try {
+            check(folder.usableSpace > 2L * 1024 * 1024 * 1024) { "请至少预留 2 GiB 存储空间，或从本地导入。" }
+            for (model in missing) {
+                currentCoroutineContext().ensureActive()
+                mutable.value = mutable.value.copy(busy = true, message = "正在下载：${modelSlots.first { it.id == model.id }.title}")
+                val archive = downloader.prepare(model, folder) { added ->
+                    bytes += added
+                    val now = android.os.SystemClock.elapsedRealtime()
+                    if (now - lastUpdate >= 200 || bytes == total) {
+                        mutable.value = mutable.value.copy(downloadedBytes = bytes); lastUpdate = now
+                    }
+                }
+                mutable.value = mutable.value.copy(message = "正在校验与安装模型…")
+                importLocked({ archive.inputStream() }, model.id)
+                check(mutable.value.installed.any { it.id == model.id }) { mutable.value.message ?: "下载模型安装失败。" }
+                File(folder, model.id).deleteRecursively(); archive.delete()
+            }
+            refreshLocked("模型已安装，可离线使用。")
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            mutable.value = mutable.value.copy(message = "下载已取消，已安装模型保留。")
+            throw cancelled
+        } catch (error: Exception) {
+            mutable.value = mutable.value.copy(message = if (error is IllegalArgumentException || error is IllegalStateException)
+                error.message ?: "下载校验失败，请重试。" else "下载失败，请检查网络与存储空间，或从本地导入。")
+        } finally {
+            folder.deleteRecursively()
+            mutable.value = mutable.value.copy(busy = false, downloading = false)
+        }
+    } }
     suspend fun installBundledModels() {
         val assets = context.assets.list("bundled-models").orEmpty().toSet()
         if (assets.isEmpty()) return
@@ -167,7 +215,7 @@ class ModelRepository(private val context: Context) {
             mutable.value = mutable.value.copy(message = error.message ?: "模型导入失败。")
         } finally {
             stage.deleteRecursively()
-            mutable.value = mutable.value.copy(busy = false)
+            mutable.value = mutable.value.copy(busy = mutable.value.downloading)
         }
     }
     suspend fun delete(id: String) = withContext(Dispatchers.IO) { mutex.withLock {
@@ -189,7 +237,7 @@ class ModelRepository(private val context: Context) {
                     json.getString("sourceURL"), installed.walkTopDown().filter { it.isFile }.sumOf { it.length() })
             }.getOrNull()
         }
-        mutable.value = ModelState(models, mutable.value.busy, message, leases > 0)
+        mutable.value = mutable.value.copy(installed = models, message = message, inUse = leases > 0)
     }
     suspend fun acquire(): ModelLease {
         var acquired: ModelLease? = null

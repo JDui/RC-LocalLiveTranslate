@@ -1,0 +1,29 @@
+{
+  "abi": "arm64-v8a",
+  "sourceURL": "https://k2-fsa.github.io/sherpa/onnx/sense-voice/pretrained.html",
+  "license": "LicenseRef-FunASR-Model-1.1",
+  "files": [
+    {
+      "size": 239233841,
+      "sha256": "c71f0ce00bec95b07744e116345e33d8cbbe08cef896382cf907bf4b51a2cd51",
+      "path": "model.onnx"
+    },
+    {
+      "size": 315894,
+      "sha256": "f449eb28dc567533d7fa59be34e2abca8784f771850c78a47fb731a31429a1dc",
+      "path": "tokens.txt"
+    },
+    {
+      "size": 5306,
+      "sha256": "7dba975a2069691db4992b0592d70828b330d2f8a30a71450f4e152a554e84f8",
+      "path": "LICENSE.FunASR.txt"
+    },
+    {
+      "size": 2054,
+      "sha256": "c16e31243a69167b5d3b2891e9ce453c5a0a2b2168e544c1a960eb322f2c22ba",
+      "path": "SOURCE.json"
+    }
+  ],
+  "version": "sherpa-int8-2024-07-17",
+  "id": "sensevoice"
+}

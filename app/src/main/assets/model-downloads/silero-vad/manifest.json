@@ -1,0 +1,24 @@
+{
+  "abi": "arm64-v8a",
+  "id": "silero-vad",
+  "license": "MIT",
+  "files": [
+    {
+      "sha256": "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6",
+      "size": 643854,
+      "path": "silero_vad.onnx"
+    },
+    {
+      "sha256": "2e63e9a38b6e8fc0c7bc37ce174caca1862870856c6daf5697cfb785e925520b",
+      "size": 1075,
+      "path": "LICENSE.Silero.txt"
+    },
+    {
+      "sha256": "b5f63c456aa0b5456d219bcb2f5ce273af11ba7f9a8fd42f7e5e4e2199a6eb35",
+      "size": 1573,
+      "path": "SOURCE.json"
+    }
+  ],
+  "sourceURL": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx",
+  "version": "sherpa-asset-271935959"
+}

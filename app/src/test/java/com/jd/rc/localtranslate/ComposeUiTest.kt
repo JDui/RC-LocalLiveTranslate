@@ -53,6 +53,22 @@ import java.io.File
 class ComposeUiTest {
     @get:Rule(order = 0) val windowLayout = WindowLayoutInfoPublisherRule()
     @get:Rule(order = 1) val compose = createAndroidComposeRule<ComponentActivity>()
+    @Test fun missingModelDownloadAndCancellationAreReachableWithSmallProgressUnits() {
+        val state = mutableStateOf(ModelState())
+        var started = false; var cancelled = false
+        compose.setContent { GlassTheme(UserSettings()) {
+            ModelsScreen(state.value, {}, {}, { started = true }, { cancelled = true })
+        } }
+        compose.onNodeWithTag("download-models").performClick()
+        compose.runOnIdle {
+            assertTrue(started)
+            state.value = ModelState(busy = true, downloading = true, downloadedBytes = 1024, downloadTotalBytes = 643854)
+        }
+        compose.onNodeWithText("1 KiB / 628 KiB").assertExists()
+        compose.onNodeWithText("取消下载").performClick()
+        compose.runOnIdle { assertTrue(cancelled) }
+        compose.onNodeWithTag("download-models").assertDoesNotExist()
+    }
     @Test fun pairSelectorChangesSettingAndChineseTranslationIsVisible() {
         val settings = mutableStateOf(UserSettings())
         compose.setContent {

@@ -1,0 +1,52 @@
+[
+  {
+    "id": "sensevoice",
+    "files": [
+      {
+        "size": 239233841,
+        "sha256": "c71f0ce00bec95b07744e116345e33d8cbbe08cef896382cf907bf4b51a2cd51",
+        "path": "model.onnx",
+        "url": "https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/2365baeacb507f821a0c8120fcee3d484dba7a07/model.int8.onnx"
+      },
+      {
+        "size": 315894,
+        "sha256": "f449eb28dc567533d7fa59be34e2abca8784f771850c78a47fb731a31429a1dc",
+        "path": "tokens.txt",
+        "url": "https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/2365baeacb507f821a0c8120fcee3d484dba7a07/tokens.txt"
+      }
+    ]
+  },
+  {
+    "id": "silero-vad",
+    "files": [
+      {
+        "sha256": "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6",
+        "size": 643854,
+        "path": "silero_vad.onnx",
+        "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx"
+      }
+    ]
+  },
+  {
+    "id": "speaker",
+    "files": [
+      {
+        "sha256": "f682b514c05d947ee3fa91cd6ec6c5c7543479a128373fa29b1faedccd21fd11",
+        "size": 28281138,
+        "path": "speaker.onnx",
+        "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx"
+      }
+    ]
+  },
+  {
+    "id": "hy-mt2",
+    "files": [
+      {
+        "size": 461860800,
+        "path": "model.gguf",
+        "sha256": "cc497fe8f033b52b3b8b00a7669e9661435432f9d4cd43f7ed24400c01507a93",
+        "url": "https://huggingface.co/tencent/Hy-MT2-1.8B-1.25Bit-GGUF/resolve/9df5c824a00a744fb0512a29c640466f4d97dfb0/Hy-MT2-1.8B-1.25Bit.gguf"
+      }
+    ]
+  }
+]

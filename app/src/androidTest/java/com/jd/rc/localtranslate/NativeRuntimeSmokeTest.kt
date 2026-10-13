@@ -12,9 +12,9 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class NativeRuntimeSmokeTest {
-    @Test fun pinnedSherpaJniLoadsWithoutNetworkPermission() {
+    @Test fun pinnedSherpaJniLoadsWithModelDownloadPermission() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        assertEquals(PackageManager.PERMISSION_DENIED, context.checkSelfPermission(Manifest.permission.INTERNET))
+        assertEquals(PackageManager.PERMISSION_GRANTED, context.checkSelfPermission(Manifest.permission.INTERNET))
         assertEquals(PackageManager.PERMISSION_DENIED, context.checkSelfPermission(Manifest.permission.ACCESS_NETWORK_STATE))
         assertEquals("1.13.8", VersionInfo.version)
         assertEquals("1.28.2", VersionInfo.onnxruntimeVersion)

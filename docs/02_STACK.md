@@ -19,7 +19,7 @@
 
 ### 构建与锁版本规则
 
-0.1.0 使用 Version Catalog / libs.versions.toml 和 Gradle Wrapper；实际构建结果记录在 11_VALIDATION.md。Compose BOM 保守固定为 2025.05.01。当前翻译接入 Hy-MT2 STQ，替代旧 Foxlet 0.5.0 AAR；sherpa-onnx 1.13.8 JNI 与 Kotlin API 固定到提交 `11afbd009a7f8c08f4bcf2fc1b265d0df4670fbf`，JNI 由 NDK 29.0.14206865 / CMake 3.22.1 构建，关闭 TTS / 离线 diarization，保留 speaker embedding。开发依赖经 `scripts/bootstrap-native.ps1` 放入忽略目录 `.tools/native`。构建期联网不等于应用运行期联网；不调用 SDK 的下载或更新接口，APK 仍无 INTERNET。禁止动态 latest / + 版本。原生分发边界见 ADR-0005。
+0.1.0 使用 Version Catalog / libs.versions.toml 和 Gradle Wrapper；实际构建结果记录在 11_VALIDATION.md。Compose BOM 保守固定为 2025.05.01。当前翻译接入 Hy-MT2 STQ，替代旧 Foxlet 0.5.0 AAR；sherpa-onnx 1.13.8 JNI 与 Kotlin API 固定到提交 `11afbd009a7f8c08f4bcf2fc1b265d0df4670fbf`，JNI 由 NDK 29.0.14206865 / CMake 3.22.1 构建，关闭 TTS / 离线 diarization，保留 speaker embedding。开发依赖经 `scripts/bootstrap-native.ps1` 放入忽略目录 `.tools/native`。构建期联网不等于应用运行期联网；不调用 SDK 的下载或更新接口，APK 的 INTERNET 仅用于用户主动下载模型，推理不联网（ADR-0007）。禁止动态 latest / + 版本。原生分发边界见 ADR-0005。
 
 Kotlin 2.4.10 是旧 Foxlet 接入阶段固定的版本，本次后端更换不同时升级或降级构建工具。Room 2.7.1 的 kapt classpath 显式使用同版本 `kotlin-metadata-jvm`，解决原处理器最多读取 2.2 元数据的问题；数据库 schema 未变。Gradle 8.11.1 目前仍受支持但有未来弃用提示，后续工具链回归须保留此提示而非宣称零警告。
 

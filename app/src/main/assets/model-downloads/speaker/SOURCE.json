@@ -1,0 +1,36 @@
+{
+  "modelId": "speaker",
+  "version": "campplus-asset-198893103",
+  "license": "Apache-2.0",
+  "authors": "Alibaba Tongyi Lab / 3D-Speaker / iic CAM++; k2-fsa sherpa-onnx (ONNX conversion)",
+  "sourceURL": "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx",
+  "licenseEvidence": [
+    "https://www.modelscope.cn/models/iic/speech_campplus_sv_zh-cn_16k-common",
+    "https://github.com/modelscope/3D-Speaker"
+  ],
+  "redistributionStatus": "Upstream model card declares Apache License 2.0. Cross-language speaker stability and full distribution review remain unvalidated.",
+  "download": {
+    "name": "3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx",
+    "size": 28281138,
+    "sha256": "f682b514c05d947ee3fa91cd6ec6c5c7543479a128373fa29b1faedccd21fd11",
+    "digestEvidence": "Observed SHA-256 from official HTTPS asset on 2026-10-09. GitHub asset 198893103 has no publisher digest; updated 2024-10-14T03:41:20Z.",
+    "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx"
+  },
+  "files": [
+    {
+      "name": "speaker.onnx",
+      "size": 28281138,
+      "sha256": "f682b514c05d947ee3fa91cd6ec6c5c7543479a128373fa29b1faedccd21fd11"
+    }
+  ],
+  "licenseFiles": [
+    {
+      "name": "LICENSE.Apache-2.0.txt",
+      "size": 11357,
+      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+      "url": "https://raw.githubusercontent.com/modelscope/3D-Speaker/065629c313eaf1a01c65c640c46d77e61e9607b4/LICENSE"
+    }
+  ],
+  "modifications": "No weight or token byte changes. Runtime filename normalization only; ONNX conversion was performed upstream.",
+  "status": "Local evaluation candidate. Android native inference, accuracy and performance remain unvalidated."
+}

@@ -1,0 +1,35 @@
+{
+  "modelId": "silero-vad",
+  "version": "sherpa-asset-271935959",
+  "license": "MIT",
+  "authors": "Silero Team; k2-fsa sherpa-onnx compatible release asset",
+  "sourceURL": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx",
+  "licenseEvidence": [
+    "https://github.com/snakers4/silero-vad"
+  ],
+  "redistributionStatus": "MIT declaration retained. Artifact identified by release asset ID / digest, not guessed Silero semantic version.",
+  "download": {
+    "name": "silero_vad.onnx",
+    "size": 643854,
+    "sha256": "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6",
+    "digestEvidence": "GitHub release asset 271935959 publisher digest; updated 2025-07-11T07:04:32Z",
+    "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx"
+  },
+  "files": [
+    {
+      "name": "silero_vad.onnx",
+      "size": 643854,
+      "sha256": "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6"
+    }
+  ],
+  "licenseFiles": [
+    {
+      "name": "LICENSE.Silero.txt",
+      "size": 1075,
+      "sha256": "2e63e9a38b6e8fc0c7bc37ce174caca1862870856c6daf5697cfb785e925520b",
+      "url": "https://raw.githubusercontent.com/snakers4/silero-vad/1e261b036686cd0017d500ee96acd1c4ba572a9d/LICENSE"
+    }
+  ],
+  "modifications": "No weight or token byte changes. Runtime filename normalization only; ONNX conversion was performed upstream.",
+  "status": "Local evaluation candidate. Android native inference, accuracy and performance remain unvalidated."
+}

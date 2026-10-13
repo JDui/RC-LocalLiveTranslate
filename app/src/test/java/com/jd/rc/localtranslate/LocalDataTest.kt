@@ -35,11 +35,11 @@ class LocalDataTest {
         assertEquals(listOf(item), CaptionJson.decode(CaptionJson.encode(listOf(item))))
     }
 
-    @Test fun mergedManifestKeepsMicrophoneButNoNetworkPermissions() {
+    @Test fun mergedManifestAllowsExplicitModelDownloadsButNoNetworkStatePermission() {
         val app = ApplicationProvider.getApplicationContext<TranslateApplication>()
         val permissions = app.packageManager.getPackageInfo(app.packageName, PackageManager.GET_PERMISSIONS).requestedPermissions.orEmpty().toSet()
         assertTrue(Manifest.permission.RECORD_AUDIO in permissions)
-        assertFalse(Manifest.permission.INTERNET in permissions)
+        assertTrue(Manifest.permission.INTERNET in permissions)
         assertFalse(Manifest.permission.ACCESS_NETWORK_STATE in permissions)
     }
     @Test fun captionJsonRoundTripPreservesLanguageRevisionAndUnknownSpeaker() {

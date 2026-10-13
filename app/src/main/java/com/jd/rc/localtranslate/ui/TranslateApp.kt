@@ -95,7 +95,7 @@ fun TranslateApp(vm: AppViewModel) {
                         composable(Page.LIVE.name) {
                             LiveScreen(live, recording, settings, vm::startDemo, vm::pauseDemo, vm::stopDemo, vm::record, processing, changeMode = { vm.setSettings(SettingsChange(translationMode = it)) }, modelBusy = models.busy)
                         }
-                        composable(Page.MODELS.name) { ModelsScreen(models, vm::importModel, vm::deleteModel) }
+                        composable(Page.MODELS.name) { ModelsScreen(models, vm::importModel, vm::deleteModel, vm::downloadModels, vm::cancelModelDownload) }
                         composable(Page.SESSIONS.name) {
                             val sessions by vm.sessions.collectAsStateWithLifecycle()
                             val count by vm.sessionCount.collectAsStateWithLifecycle()
@@ -365,7 +365,8 @@ internal fun CaptionRow(item: SubtitleItem, settings: UserSettings) {
 }
 
 @Composable
-internal fun ModelsScreen(state: ModelState, import: (Uri) -> Unit, delete: (String) -> Unit) {
+internal fun ModelsScreen(state: ModelState, import: (Uri) -> Unit, delete: (String) -> Unit,
+    download: () -> Unit = {}, cancelDownload: () -> Unit = {}) {
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { it?.let(import) }
     var deleting by remember { mutableStateOf<ModelSlot?>(null) }
     val speechScroll = rememberScrollState()
@@ -375,7 +376,19 @@ internal fun ModelsScreen(state: ModelState, import: (Uri) -> Unit, delete: (Str
         Column(Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
                 Text("${state.installed.size} / ${modelSlots.size} 已安装", fontSize = 24.sp, fontWeight = FontWeight.Medium)
                 if (state.inUse) Text("会话正在使用模型", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
-                if (state.busy) { LinearProgressIndicator(Modifier.fillMaxWidth()); Text("正在导入与校验", Modifier.padding(vertical = 12.dp)) }
+                if (state.downloading) {
+                    LinearProgressIndicator(progress = { (state.downloadedBytes.toFloat() / state.downloadTotalBytes.coerceAtLeast(1)).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
+                    Text("${formatDownloadBytes(state.downloadedBytes)} / ${formatDownloadBytes(state.downloadTotalBytes)}", style = MaterialTheme.typography.bodySmall)
+                    TextButton(onClick = cancelDownload) { Text("取消下载") }
+                } else if (state.busy) { LinearProgressIndicator(Modifier.fillMaxWidth()); Text("正在导入与校验", Modifier.padding(vertical = 12.dp)) }
+                if (state.installed.size < modelSlots.size && !state.downloading) {
+                    Button(onClick = download, enabled = !state.busy && !state.inUse,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("download-models")) {
+                        Icon(Icons.Outlined.DownloadForOffline, null, Modifier.size(20.dp))
+                        Spacer(Modifier.width(8.dp)); Text("一键下载缺失模型")
+                    }
+                    Text("仅下载模型；全部约 697 MiB，预留 2 GiB 空间。也可离线导入。", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(vertical = 8.dp))
+                }
                 state.message?.let { Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 16.dp)) }
             SectionLabel("语音模型")
             modelSlots.filter { it.id !in setOf("hy-mt2") }.forEach { slot -> ModelRow(slot, state) { deleting = slot } }
@@ -430,6 +443,8 @@ private fun ModelRow(slot: ModelSlot, state: ModelState, delete: () -> Unit) {
         dismissButton = { TextButton(enabled = !state.busy && !state.inUse,
             onClick = { details = false; delete() }) { Text("删除模型") } })
 }
+
+private fun formatDownloadBytes(bytes: Long): String = if (bytes < 1024L * 1024) "${bytes / 1024} KiB" else "${bytes / 1024 / 1024} MiB"
 
 @Composable
 internal fun SessionsScreen(sessions: List<SavedSession>, settings: UserSettings, rename: (String, String) -> Unit,

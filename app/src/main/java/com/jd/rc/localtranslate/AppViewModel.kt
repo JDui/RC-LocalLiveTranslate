@@ -46,6 +46,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val mutableNotice = MutableStateFlow<String?>(null)
     val notice = mutableNotice.asStateFlow()
     private var demoJob: Job? = null
+    private var modelDownloadJob: Job? = null
     private var reducer = SubtitleReducer("")
     private var demoTitle = ""
     private var demoMode = TranslationMode.TO_ZH
@@ -109,6 +110,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         runCatching { app.settings.update(change) }.onFailure { mutableNotice.value = "无法保存设置。" }
     } }
     fun importModel(uri: Uri) { viewModelScope.launch { app.models.import(uri) } }
+    fun downloadModels() {
+        if (modelDownloadJob?.isActive == true || models.value.busy || models.value.inUse) return
+        modelDownloadJob = viewModelScope.launch { app.models.downloadMissing() }
+    }
+    fun cancelModelDownload() { modelDownloadJob?.cancel() }
     fun deleteModel(id: String) { viewModelScope.launch {
         runCatching { app.models.delete(id) }.onFailure { mutableNotice.value = "模型删除失败。" }
     } }

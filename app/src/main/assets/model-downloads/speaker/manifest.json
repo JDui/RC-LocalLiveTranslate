@@ -1,0 +1,24 @@
+{
+  "abi": "arm64-v8a",
+  "id": "speaker",
+  "license": "Apache-2.0",
+  "files": [
+    {
+      "sha256": "f682b514c05d947ee3fa91cd6ec6c5c7543479a128373fa29b1faedccd21fd11",
+      "size": 28281138,
+      "path": "speaker.onnx"
+    },
+    {
+      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+      "size": 11357,
+      "path": "LICENSE.Apache-2.0.txt"
+    },
+    {
+      "sha256": "82cee0b9eae04f55953fa579d3a0530d52a1a62fc56be89d2fe6fa99db5cb32e",
+      "size": 1908,
+      "path": "SOURCE.json"
+    }
+  ],
+  "sourceURL": "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx",
+  "version": "campplus-asset-198893103"
+}

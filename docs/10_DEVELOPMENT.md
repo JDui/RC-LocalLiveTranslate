@@ -41,7 +41,7 @@ APK：`app/build/outputs/apk/debug/app-debug.apk`。测试报告：`app/build/re
 - 生产会话结束也由 Service 保存，UI 重建或折叠不会成为数据持有者。设置页离线显示 SDK 随包许可、NOTICE 与 SOURCE。
 
 折叠双栏使用稳定的 Compose 内容槽及现有 WindowManager 几何层，不按机型硬编码，不依赖系统强制拉伸 / 应用复制。实体分隔与 FULL 遮挡优先；无分隔时依据正文实际宽高与字体决定双栏。普通手机的模型 / 设置仍单列滚动，模型集合只有五个条目，使用普通 Column 避免无限高度中的嵌套 LazyColumn；记录保留有界 viewport 的 LazyColumn。实时伴随区独立展示最新语段，不强制改变左侧历史阅读位置，新语段将伴随区滚回顶部，同段异步修订不重置它。
-- DataStore 保存显示、隐私和性能设置；控件只提交修改字段，连续更新不会用旧快照重新打开记录保留。关闭记录的意图在 ViewModel 提交时生效，保存门禁不等待这份写入；持久化设置读取遇到 IO 错误时拒绝保存，而不是采用显示层默认值。APK 无 INTERNET、ACCESS_NETWORK_STATE、广泛存储权限或遥测 SDK。
+- DataStore 保存显示、隐私和性能设置；控件只提交修改字段，连续更新不会用旧快照重新打开记录保留。关闭记录的意图在 ViewModel 提交时生效，保存门禁不等待这份写入；持久化设置读取遇到 IO 错误时拒绝保存，而不是采用显示层默认值。APK的INTERNET仅用于主动模型下载；无ACCESS_NETWORK_STATE、广泛存储权限或遥测SDK。
 - 模型 ZIP 通过 SAF 导入私有目录，校验清单、文件大小与 SHA-256，限制文件数和解压体积，拒绝越界路径、重复及未登记文件。校验后替换；失败保留旧版本，进程重启可恢复备份。清单哈希验证文件完整性，不认证发布者身份或权重许可。
 
 ## 系统压力与性能模式
@@ -101,11 +101,11 @@ ZIP 根目录必须有 `manifest.json`。ID 仅允许 `sensevoice`、`silero-vad
 ./scripts/pack-model.ps1 -Id sensevoice -SourceDirectory <audited-model-directory> -Version <version> -License <weight-license> -SourceURL <upstream-artifact-url> -OutputFile <new-output.zip>
 ```
 
-当前翻译权重通过 `scripts/prepare-hymt-model.ps1` 准备，ASR / VAD / CAM++ 通过 `scripts/prepare-speech-models.ps1` 准备；均在电脑下载校验并生成本地包，`-Offline` 仅用缓存并重新验证。默认 ASR 是三语 TTS auto 检查通过的官方 2024 原版；2025 粤语候选仅显式 opt-in，当前检查失败，不推荐作为生产导入基线。打包脚本保留根目录 LICENSE / NOTICE / COPYING / SOURCE 附带文件。当前四包主机导入需显式开启独立测试，普通回归不依赖缓存；完整命令、版本、许可与证据边界见 [14_MODEL_PREPARATION](14_MODEL_PREPARATION.md)。应用运行时仍不联网。
+当前翻译权重通过 `scripts/prepare-hymt-model.ps1` 准备，ASR / VAD / CAM++ 通过 `scripts/prepare-speech-models.ps1` 准备；均在电脑下载校验并生成本地包，`-Offline` 仅用缓存并重新验证。默认 ASR 是三语 TTS auto 检查通过的官方 2024 原版；2025 粤语候选仅显式 opt-in，当前检查失败，不推荐作为生产导入基线。打包脚本保留根目录 LICENSE / NOTICE / COPYING / SOURCE 附带文件。当前四包主机导入需显式开启独立测试，普通回归不依赖缓存；完整命令、版本、许可与证据边界见 [14_MODEL_PREPARATION](14_MODEL_PREPARATION.md)。模型准备后推理仍不联网；用户主动下载权重见[ADR-0007](adr/0007-user-initiated-model-downloads.md)。
 
 ## 设备验证入口
 
-`assembleDebugAndroidTest` 只构建测试 APK，不代表测试已运行。设备端 `NativeRuntimeSmokeTest` 检查固定版本 JNI 加载、无 INTERNET、Hy JNI 加载及缺权重拒绝；执行时指定该类，避免误把需要权重的测试当成零配置 smoke。
+`assembleDebugAndroidTest` 只构建测试 APK，不代表测试已运行。设备端 `NativeRuntimeSmokeTest` 检查固定版本JNI加载、模型下载INTERNET权限和无网络状态权限、Hy JNI加载及缺权重拒绝；执行时指定该类，避免误把需要权重的测试当成零配置 smoke。
 
 ```text
 ./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.jd.rc.localtranslate.NativeRuntimeSmokeTest
@@ -124,7 +124,7 @@ NativeModelTest 在管线清理后导出 `validation/diagnostics/native-model.js
 3. 真机验证权限拒绝、后台/锁屏、通知停止、音频占用、字体缩放、飞行模式、折叠姿态、16 KB page size 与 30–60 分钟热机性能。
 4. 完成原生依赖及权重合规、项目许可证决策和可重现发行审核。不能以编译通过代替项目完成。
 
-未指定项目 LICENSE，未将模型权重打入 APK 或 Git，也未发布正式 Release；五套模型基线仅已在本地忽略目录打包。
+未指定项目 LICENSE，未将模型权重打入 APK 或 Git，公开发行仍为预发布测试版；当前四套模型包仅在本地忽略目录打包，Release不附权重。
 
 ## GUI 性能工具入口
 
