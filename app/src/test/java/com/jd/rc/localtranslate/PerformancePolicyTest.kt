@@ -17,12 +17,14 @@ class PerformancePolicyTest {
         assertEquals(PressureLevel.CONSERVE, state.level)
         assertFalse(state.policy.speakerEnabled); assertTrue(state.policy.translationEnabled)
         assertEquals(48_000L, state.policy.partialIntervalSamples)
+        assertFalse(state.policy.translationHighPerformance)
     }
     @Test fun severePressureKeepsFinalSourceButNoOptionalInference() {
         val state = PerformancePolicyController().evaluate(PressureSnapshot(thermalStatus = 3), PerformanceMode.AUTO, 0)
         assertEquals(PressureLevel.SOURCE_ONLY, state.level)
         assertFalse(state.policy.stop); assertFalse(state.policy.speakerEnabled); assertFalse(state.policy.translationEnabled)
         assertEquals(0L, state.policy.partialIntervalSamples)
+        assertFalse(state.policy.translationHighPerformance)
     }
     @Test fun criticalEmergencyAndShutdownAllRequestStop() {
         for (status in 4..6) {
@@ -58,6 +60,8 @@ class PerformancePolicyTest {
         val eco = controller.evaluate(PressureSnapshot(), PerformanceMode.ECO, 0)
         assertFalse(eco.policy.speakerEnabled); assertTrue(eco.policy.translationEnabled)
         assertEquals(32_000L, eco.policy.partialIntervalSamples)
+        assertFalse(eco.policy.translationHighPerformance)
+        assertTrue(controller.evaluate(PressureSnapshot(), PerformanceMode.AUTO, 1).policy.translationHighPerformance)
         assertTrue(controller.evaluate(PressureSnapshot(), PerformanceMode.AUTO, 1).policy.speakerEnabled)
         assertTrue(controller.evaluate(PressureSnapshot(thermalStatus = 4), PerformanceMode.ECO, 2).policy.stop)
     }

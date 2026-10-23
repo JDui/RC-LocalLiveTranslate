@@ -5,6 +5,8 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Path
+import android.graphics.RectF
 import android.graphics.drawable.AdaptiveIconDrawable
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.*
@@ -49,13 +51,11 @@ class LauncherIconTest {
             })
             icon.draw(canvas)
             val colors = mutableSetOf<Int>()
-            var objectPixels = 0
             for (y in 0 until size) for (x in 0 until size) {
                 val pixel = rendered.getPixel(x, y)
                 colors += pixel
-                if (Color.red(pixel) > 140 && Color.alpha(pixel) > 200) objectPixels++
             }
-            assertTrue("Launcher must show the jelly rather than only a background", objectPixels > size * size / 5)
+            assertTranslationAccents(rendered)
             assertTrue("Launcher render must retain visual detail", colors.size > 100)
             assertEquals(0, Color.alpha(rendered.getPixel(0, 0)))
             previewCanvas.drawBitmap(rendered, if (index == 0) 100f else 350f, (320 - size) / 2f, null)
@@ -66,5 +66,60 @@ class LauncherIconTest {
             preview.compress(Bitmap.CompressFormat.PNG, 100, it)
         }
         preview.recycle()
+    }
+
+    @Test fun roundedRectangleIsFilledAtSmallAndLargeSizes() {
+        val preview = Bitmap.createBitmap(640, 320, Bitmap.Config.ARGB_8888)
+        val previewCanvas = Canvas(preview)
+        previewCanvas.drawColor(Color.rgb(246, 239, 223))
+        val coverage = mutableListOf<Float>()
+        for ((index, size) in listOf(48, 192).withIndex()) {
+            val icon = context.getDrawable(R.mipmap.ic_launcher) as AdaptiveIconDrawable
+            icon.setBounds(0, 0, size, size)
+            val mask = Path().apply {
+                addRoundRect(RectF(0f, 0f, size.toFloat(), size.toFloat()), size * .18f, size * .18f, Path.Direction.CW)
+            }
+            val foreground = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+            Canvas(foreground).apply { clipPath(mask); icon.foreground.draw(this) }
+            var objectPixels = 0
+            for (y in 0 until size) for (x in 0 until size) {
+                if (Color.alpha(foreground.getPixel(x, y)) > 200) objectPixels++
+            }
+            val fraction = objectPixels.toFloat() / (size * size)
+            assertTrue("Jelly must fill the rounded rectangle at $size px: $fraction", fraction > .80f)
+            coverage += fraction
+            assertTranslationAccents(foreground)
+            val rendered = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+            // Draw framework-sized adaptive layers with an explicit launcher mask.
+            Canvas(rendered).apply {
+                clipPath(mask)
+                icon.background.draw(this)
+                icon.foreground.draw(this)
+            }
+            assertEquals(0, Color.alpha(rendered.getPixel(0, 0)))
+            previewCanvas.drawBitmap(rendered, if (index == 0) 100f else 350f, (320 - size) / 2f, null)
+            foreground.recycle()
+            rendered.recycle()
+        }
+        assertEquals("Small icons must retain the same visual scale", coverage[0], coverage[1], .04f)
+        File("build/ui-screenshots").mkdirs()
+        File("build/ui-screenshots/launcher-konjac-rounded.png").outputStream().use {
+            preview.compress(Bitmap.CompressFormat.PNG, 100, it)
+        }
+        preview.recycle()
+    }
+
+    private fun assertTranslationAccents(bitmap: Bitmap) {
+        var jade = 0
+        var coral = 0
+        for (y in 0 until bitmap.height) for (x in 0 until bitmap.width) {
+            val pixel = bitmap.getPixel(x, y)
+            if (Color.alpha(pixel) <= 200) continue
+            val r = Color.red(pixel); val g = Color.green(pixel); val b = Color.blue(pixel)
+            if (g > r * 1.12f && g > b * 1.05f) jade++
+            if (r > g * 1.15f && r > b * 1.15f) coral++
+        }
+        assertTrue("Jade translation accent must remain visible", jade > bitmap.width * bitmap.height / 100)
+        assertTrue("Coral translation accent must remain visible", coral > bitmap.width * bitmap.height / 100)
     }
 }

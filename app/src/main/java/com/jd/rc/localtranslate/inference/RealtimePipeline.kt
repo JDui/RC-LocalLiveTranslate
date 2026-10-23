@@ -173,7 +173,8 @@ class RealtimePipeline(private val sessionId: String, private val engines: Speec
                         translations.onReceiveCatching { if (it.isClosed) { ended = true; null } else it.getOrNull() }
                     }
                     if (pending != null) translationStats.dequeued()
-                    if (!runtime.value.policy.translationEnabled) {
+                    val policy = runtime.value.policy
+                    if (!policy.translationEnabled) {
                         engines.releaseTranslation()
                         if (pending != null) { unavailable(pending); store.deferredTranslation() }
                         continue
@@ -181,7 +182,14 @@ class RealtimePipeline(private val sessionId: String, private val engines: Speec
                     val work = pending ?: continue
                     ensureProcessing()
                     try {
-                        val text = diagnostics.measureSuspending(when (work.language) { SourceLanguage.JA -> InferenceStage.TRANSLATE_JA; SourceLanguage.ZH -> InferenceStage.TRANSLATE_ZH; else -> InferenceStage.TRANSLATE_EN },
+                        engines.configureTranslation(policy.translationHighPerformance)
+                        val text = diagnostics.measureSuspending(when (work.language) {
+                            SourceLanguage.JA -> InferenceStage.TRANSLATE_JA
+                            SourceLanguage.ZH -> InferenceStage.TRANSLATE_ZH
+                            SourceLanguage.KO -> InferenceStage.TRANSLATE_KO
+                            SourceLanguage.YUE -> InferenceStage.TRANSLATE_YUE
+                            else -> InferenceStage.TRANSLATE_EN
+                        },
                             queuedAtNanos = work.queuedAtNanos) { engines.translate(work.text, work.language, work.target) }
                         ensureProcessing()
                         store.publish(SubtitleEvent.Translation(sessionId, work.id, work.revision, text.orEmpty(),

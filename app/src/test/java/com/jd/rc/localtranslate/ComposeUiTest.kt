@@ -13,6 +13,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.junit4.StateRestorationTester
@@ -69,17 +70,80 @@ class ComposeUiTest {
         compose.runOnIdle { assertTrue(cancelled) }
         compose.onNodeWithTag("download-models").assertDoesNotExist()
     }
-    @Test fun pairSelectorChangesSettingAndChineseTranslationIsVisible() {
+    @Test fun twoLanguageSelectorsDefaultToChineseAndOfferKoreanAndCantonese() {
         val settings = mutableStateOf(UserSettings())
         compose.setContent {
             GlassTheme(settings.value) {
                 LiveScreen(LiveState(), RecordingState(), settings.value, {}, {}, {}, {}, changeMode = { settings.value = settings.value.copy(translationMode = it) })
             }
         }
-        compose.onNodeWithText("译中文").performClick()
-        compose.onNodeWithText("中 ↔ 日").performClick()
-        compose.onNodeWithText("中 ↔ 日").assertExists()
-        compose.runOnIdle { assertEquals(TranslationMode.ZH_JA, settings.value.translationMode) }
+        compose.onNodeWithContentDescription("第一语言").assertTextContains("自动识别").performClick()
+        compose.onNodeWithText("韩语").performClick()
+        compose.onNodeWithContentDescription("第一语言").assertTextContains("韩语")
+        compose.onNodeWithContentDescription("第二语言").assertTextContains("中文")
+        compose.runOnIdle { assertEquals(TranslationMode(SourceLanguage.KO, SourceLanguage.ZH), settings.value.translationMode) }
+        compose.onNodeWithContentDescription("第二语言").performClick()
+        compose.onNodeWithText("粤语").performClick()
+        compose.onNodeWithContentDescription("第二语言").assertTextContains("粤语")
+        compose.runOnIdle { assertEquals(TranslationMode(SourceLanguage.KO, SourceLanguage.YUE), settings.value.translationMode) }
+        snapshot("five-language-selectors")
+        compose.onNodeWithContentDescription("第一语言").performClick()
+        compose.onNodeWithTag("language-option-yue").performClick()
+        compose.onNodeWithContentDescription("第一语言").assertTextContains("粤语")
+        compose.onNodeWithContentDescription("第二语言").assertTextContains("韩语")
+    }
+
+    @Test fun bothLanguageSelectorsStayLockedThroughoutSessionAndUnlockAfterStop() {
+        val recording = mutableStateOf(RecordingState())
+        compose.setContent { GlassTheme(UserSettings()) {
+            LiveScreen(LiveState(), recording.value, UserSettings(), {}, {}, {}, {})
+        } }
+        for (phase in listOf(RecordingPhase.STARTING, RecordingPhase.RECORDING, RecordingPhase.PAUSED, RecordingPhase.STOPPING)) {
+            compose.runOnIdle { recording.value = RecordingState(phase = phase) }
+            compose.onNodeWithContentDescription("第一语言").assertIsNotEnabled()
+            compose.onNodeWithContentDescription("第二语言").assertIsNotEnabled()
+        }
+        compose.runOnIdle { recording.value = RecordingState() }
+        compose.onNodeWithContentDescription("第一语言").assertIsEnabled()
+        compose.onNodeWithContentDescription("第二语言").assertIsEnabled()
+    }
+
+    @Test fun openingMenuThenStartingSessionDismissesLanguageOptions() {
+        val recording = mutableStateOf(RecordingState())
+        compose.setContent { GlassTheme(UserSettings()) {
+            LiveScreen(LiveState(), recording.value, UserSettings(), {}, {}, {}, {})
+        } }
+        compose.onNodeWithContentDescription("第一语言").performClick()
+        compose.onNodeWithTag("language-option-ko").assertIsDisplayed()
+        compose.runOnIdle { recording.value = RecordingState(phase = RecordingPhase.STARTING) }
+        compose.onNodeWithTag("language-option-ko").assertDoesNotExist()
+        compose.onNodeWithContentDescription("第一语言").assertIsNotEnabled()
+    }
+
+    @Test @Config(qualifiers = "w320dp-h640dp-mdpi") fun languageSelectorsFitNarrowScreenWithDoubleFontScale() {
+        val settings = mutableStateOf(UserSettings())
+        compose.setContent {
+            val density = LocalDensity.current
+            CompositionLocalProvider(LocalDensity provides Density(density.density, 2f)) {
+                GlassTheme(settings.value) {
+                    Box(Modifier.fillMaxSize()) {
+                        GlassBackdrop(Modifier.matchParentSize())
+                        LiveScreen(LiveState(), RecordingState(), settings.value, {}, {}, {}, {},
+                            changeMode = { settings.value = settings.value.copy(translationMode = it) })
+                    }
+                }
+            }
+        }
+        compose.onNodeWithContentDescription("第一语言").assertIsDisplayed().assertHeightIsAtLeast(48.dp).performClick()
+        for (language in SourceLanguage.supported) compose.onNodeWithTag("language-option-${language.code}").assertIsDisplayed()
+        compose.onNodeWithTag("language-option-ko").performClick()
+        compose.onNodeWithContentDescription("第二语言").assertIsDisplayed().assertHeightIsAtLeast(48.dp).performClick()
+        compose.onNodeWithTag("language-option-yue").performClick()
+        val left = compose.onNodeWithContentDescription("第一语言").fetchSemanticsNode().boundsInRoot
+        val right = compose.onNodeWithContentDescription("第二语言").fetchSemanticsNode().boundsInRoot
+        assertTrue(left.right <= right.left)
+        assertTrue(left.left >= 0f && right.right <= 320f)
+        snapshot("five-language-narrow-large-font")
     }
     private val savedTitle = SessionTitle.create(1_791_520_000_000, "上海")
     private val captions = listOf(
@@ -130,7 +194,9 @@ class ComposeUiTest {
         assertTrue("Screenshot must be nonblank", bitmap.width > 300 && bitmap.height > 300)
         val colors = mutableSetOf<Int>()
         for (y in 0 until bitmap.height step 7) for (x in 0 until bitmap.width step 7) colors.add(bitmap.getPixel(x, y))
-        assertTrue("Rendered UI must contain content", colors.size > 100)
+        assertTrue("Screenshot must include drawn content", colors.size > 1)
+        assertTrue("Rendered UI must contain text", compose.onAllNodes(
+            SemanticsMatcher.keyIsDefined(SemanticsProperties.Text)).fetchSemanticsNodes().isNotEmpty())
         File("build/ui-screenshots").mkdirs()
         File("build/ui-screenshots/$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }

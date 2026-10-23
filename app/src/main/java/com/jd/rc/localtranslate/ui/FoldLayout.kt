@@ -204,7 +204,8 @@ internal fun FoldAlertDialog(onDismissRequest: () -> Unit, title: @Composable ()
     dismissButton: @Composable () -> Unit = {}) {
     val plan = LocalPanePlan.current
     if (plan?.avoidsFold != true) {
-        AlertDialog(onDismissRequest, confirmButton, dismissButton = dismissButton, title = title, text = text)
+        AlertDialog(onDismissRequest, confirmButton, dismissButton = dismissButton, title = title, text = text,
+            shape = MaterialTheme.shapes.extraLarge)
         return
     }
     var origin by remember { mutableStateOf(IntOffset.Zero) }
@@ -215,7 +216,7 @@ internal fun FoldAlertDialog(onDismissRequest: () -> Unit, title: @Composable ()
         Layout(modifier = Modifier.fillMaxSize().safeDrawingPadding().imePadding().onGloballyPositioned {
             val p = it.positionInWindow(); origin = IntOffset(p.x.roundToInt(), p.y.roundToInt())
         }.pointerInput(onDismissRequest) { detectTapGestures { onDismissRequest() } }, content = {
-            Surface(shape = AlertDialogDefaults.shape, color = AlertDialogDefaults.containerColor,
+            Surface(shape = MaterialTheme.shapes.extraLarge, color = AlertDialogDefaults.containerColor,
                 tonalElevation = AlertDialogDefaults.TonalElevation,
                 modifier = Modifier.pointerInput(Unit) { detectTapGestures { } }.semantics { paneTitle = "对话框" }) {
                 Column(Modifier.verticalScroll(rememberScrollState()).padding(24.dp)) {

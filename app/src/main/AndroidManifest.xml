@@ -5,7 +5,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <application android:name=".TranslateApplication" android:label="RC 本地同传"
+    <application android:name=".TranslateApplication" android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher" android:allowBackup="false"
         android:fullBackupContent="false" android:dataExtractionRules="@xml/data_extraction_rules"
         android:usesCleartextTraffic="false"

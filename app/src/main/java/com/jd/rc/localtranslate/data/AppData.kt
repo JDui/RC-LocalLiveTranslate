@@ -57,7 +57,7 @@ class SettingsRepository(private val context: Context) {
         UserSettings(ThemeMode.entries.find { mode -> mode.name == it[theme] } ?: ThemeMode.SYSTEM,
             it[bilingual] ?: true, (it[font] ?: 19f).coerceIn(8f, 24f), it[keep] ?: true, it[opaque] ?: false,
             PerformanceMode.entries.find { mode -> mode.name == it[performance] } ?: PerformanceMode.AUTO,
-            TranslationMode.entries.find { mode -> mode.name == it[translation] } ?: TranslationMode.TO_ZH, SessionTitle.normalizeCity(it[city].orEmpty()))
+            TranslationMode.fromStored(it[translation]), SessionTitle.normalizeCity(it[city].orEmpty()))
     }
     suspend fun canKeepSessions(): Boolean {
         if (keepIntent == false) return false

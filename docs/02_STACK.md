@@ -33,4 +33,4 @@ ABI、minSdk 与 CPU 指令回退以最终打包原生库为准；Android 16 KB 
 
 资料：[Compose BOM](https://developer.android.com/develop/ui/compose/bom)、[Foxlet](https://github.com/yinvoke/foxlet-translate)、[sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx)。
 
-Hy-MT2 权重与 STQ runtime 固定版本见 scripts/hymt-model.lock.json / scripts/build-hymt-native.ps1。不编译 llama common/server/网络客户端，CPU 2 threads、上下文 1024 tokens；依赖 PR #22836 尚未合并，不能当作普通上游发行支持。
+Hy-MT2 权重与 STQ runtime 固定版本见 scripts/hymt-model.lock.json / scripts/build-hymt-native.ps1。不编译 llama common/server/网络客户端；自动模式 CPU 生成最多 4 / 预填充最多 6 threads，按核数限幅，省电或中度热压力最多 2 / 2，上下文 1024 tokens。预算公式和验收边界见 21_TRANSLATION_SPEED_PLAN.md；依赖 PR #22836 尚未合并，不能当作普通上游发行支持。

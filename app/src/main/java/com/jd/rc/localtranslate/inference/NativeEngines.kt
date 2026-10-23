@@ -23,6 +23,7 @@ interface SpeechEngines {
     fun recognize(samples: FloatArray): RecognizedSpeech
     fun embedding(samples: FloatArray): FloatArray?
     suspend fun translate(text: String, language: SourceLanguage, target: SourceLanguage = SourceLanguage.ZH): String?
+    fun configureTranslation(highPerformance: Boolean) {}
     fun releaseSpeaker() {}
     suspend fun releaseTranslation() {}
     suspend fun close()
@@ -33,6 +34,7 @@ class NativeEngines private constructor(private val lease: ModelLease, private v
     private val translationModel: ModelBundle?) : SpeechEngines {
     private var speaker: SpeakerEmbeddingExtractor? = null
     private var translator: HyTranslator? = null
+    private var translationHighPerformance = true
     override fun acceptVad(samples: FloatArray) = vad.acceptWaveform(samples)
     override fun speechDetected() = vad.isSpeechDetected()
     override fun takeSegments(): List<DetectedSpeech> = buildList {
@@ -45,9 +47,7 @@ class NativeEngines private constructor(private val lease: ModelLease, private v
         try {
             stream.acceptWaveform(samples, 16_000); recognizer.decode(stream)
             val result = recognizer.getResult(stream)
-            val language = when (result.lang.lowercase().removePrefix("<|").removeSuffix("|>")) {
-                "zh" -> SourceLanguage.ZH; "en" -> SourceLanguage.EN; "ja" -> SourceLanguage.JA; else -> SourceLanguage.UNKNOWN
-            }
+            val language = SourceLanguage.fromAsrTag(result.lang)
             return RecognizedSpeech(result.text.trim(), language)
         } finally { stream.release() }
     }
@@ -66,8 +66,9 @@ class NativeEngines private constructor(private val lease: ModelLease, private v
         if (language == SourceLanguage.UNKNOWN || target == SourceLanguage.UNKNOWN) return null
         val model = translationModel ?: return null
         val client = translator ?: HyTranslator(model.required("model.gguf")).also { translator = it }
-        return client.translate(text, target)
+        return client.translate(text, target, translationHighPerformance)
     }
+    override fun configureTranslation(highPerformance: Boolean) { translationHighPerformance = highPerformance }
     override fun releaseSpeaker() {
         val current = speaker; speaker = null
         current?.release()

@@ -7,7 +7,8 @@ data class PressureSnapshot(val thermalStatus: Int? = null, val availableBytes: 
     val heapHeadroomBytes: Long? = null, val lowMemory: Boolean = false)
 
 data class InferencePolicy(val partialIntervalSamples: Long = 16_000, val speakerEnabled: Boolean = true,
-    val translationEnabled: Boolean = true, val stop: Boolean = false, val status: String? = null)
+    val translationEnabled: Boolean = true, val stop: Boolean = false, val status: String? = null,
+    val translationHighPerformance: Boolean = true)
 
 data class RuntimePerformance(val active: Boolean = false, val snapshot: PressureSnapshot = PressureSnapshot(),
     val level: PressureLevel = PressureLevel.NORMAL, val policy: InferencePolicy = InferencePolicy())
@@ -31,10 +32,10 @@ internal class PerformancePolicyController(private val recoveryMillis: Long = 30
             if (now - recoverySince >= recoveryMillis) { applied = observed; candidate = null }
         }
         val policy = when (applied) {
-            PressureLevel.STOP -> InferencePolicy(0, false, false, true, "系统压力过高，采集已停止。")
-            PressureLevel.SOURCE_ONLY -> InferencePolicy(0, false, false, status = "原文优先：临时字幕、翻译与声纹暂停。")
-            PressureLevel.CONSERVE -> InferencePolicy(48_000, false, true, status = "温度较高：临时字幕降频，声纹暂停。")
-            PressureLevel.NORMAL -> if (mode == PerformanceMode.ECO) InferencePolicy(32_000, false, true, status = "省电模式：声纹暂停。") else InferencePolicy()
+            PressureLevel.STOP -> InferencePolicy(0, false, false, true, "系统压力过高，采集已停止。", translationHighPerformance = false)
+            PressureLevel.SOURCE_ONLY -> InferencePolicy(0, false, false, status = "原文优先：临时字幕、翻译与声纹暂停。", translationHighPerformance = false)
+            PressureLevel.CONSERVE -> InferencePolicy(48_000, false, true, status = "温度较高：翻译降低资源占用，临时字幕降频，声纹暂停。", translationHighPerformance = false)
+            PressureLevel.NORMAL -> if (mode == PerformanceMode.ECO) InferencePolicy(32_000, false, true, status = "省电模式：翻译降低资源占用，声纹暂停。", translationHighPerformance = false) else InferencePolicy()
         }
         return RuntimePerformance(true, snapshot, applied, policy)
     }

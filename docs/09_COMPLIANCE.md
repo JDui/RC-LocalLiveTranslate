@@ -53,3 +53,5 @@ Android 受限制的麦克风前台服务一般不能从任意后台状态/BOOT_
 来源：[Android mic foreground service](https://developer.android.com/develop/background-work/services/fgs/service-types)、[Audio playback capture](https://developer.android.com/media/platform/av-capture)、[Android 17](https://developer.android.com/about/versions/17)。
 
 当前发行依赖已移除 Foxlet AAR。旧许可材料及模型目录不主动删除；历史验证段中的 Foxlet 信息不表示当前 APK 仍加载该引擎。Hy-MT2 的模型许可不替代本项目许可，STQ 运行库为 MIT。
+
+2026-10-23 韩语 / 粤语接入沿用已登记的 SenseVoiceSmall INT8 2024-07-17 和 Hy-MT2 1.8B 1.25-bit 固定权重，许可矩阵、下载清单及依赖版本不变；未引入 2025 粤语微调候选、额外模型或在线推理服务。增加语言路由不等于新增权重已通过分发审核。

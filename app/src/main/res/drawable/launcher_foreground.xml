@@ -1,4 +1,4 @@
 <inset xmlns:android="http://schemas.android.com/apk/res/android"
-    android:inset="6dp">
-    <bitmap android:src="@drawable/translation_konjac" android:gravity="fill" />
+    android:inset="16.666667%">
+    <bitmap android:src="@drawable/translation_konjac_fullbleed" android:gravity="fill" />
 </inset>

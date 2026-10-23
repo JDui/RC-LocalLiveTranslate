@@ -304,7 +304,7 @@ class RecordingService : Service() {
     private fun notification(paused: Boolean): Notification {
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
         val stop = PendingIntent.getService(this, 1, Intent(this, RecordingService::class.java).setAction(STOP), PendingIntent.FLAG_IMMUTABLE)
-        return Notification.Builder(this, CHANNEL).setSmallIcon(R.drawable.ic_app).setContentTitle("RC 本地同传")
+        return Notification.Builder(this, CHANNEL).setSmallIcon(R.drawable.ic_app).setContentTitle(getString(R.string.app_name))
             .setContentText(if (paused) "采集已暂停" else "麦克风采集中 · 完全本地推理")
             .setContentIntent(open).setOngoing(true).addAction(Notification.Action.Builder(null, "停止", stop).build()).build()
     }

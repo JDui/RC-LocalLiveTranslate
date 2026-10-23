@@ -26,6 +26,20 @@ import org.robolectric.annotation.LooperMode
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], application = TranslateApplication::class)
 class LocalDataTest {
+    @Test fun fiveLanguagePreferencesAndCaptionLanguagesPersist() = runBlocking {
+        val app = ApplicationProvider.getApplicationContext<TranslateApplication>()
+        for (first in listOf(null) + SourceLanguage.supported) for (second in SourceLanguage.supported.filter { it != first }) {
+            val mode = TranslationMode(first, second)
+            app.settings.update(SettingsChange(translationMode = mode))
+            assertEquals(mode, SettingsRepository(app).settings.first().translationMode)
+        }
+        val items = listOf(SourceLanguage.KO to SourceLanguage.YUE, SourceLanguage.YUE to SourceLanguage.KO).mapIndexed { index, (source, target) ->
+            SubtitleItem("session", "$index", 0, 16000, sourceLanguage = source,
+                sourceText = "안녕하세요。你好呀。", targetText = "你好呀。안녕하세요。", targetLanguage = target)
+        }
+        assertEquals(items, CaptionJson.decode(CaptionJson.encode(items)))
+    }
+
     @Test fun pairPreferenceAndCaptionTargetLanguageRoundTrip() = runBlocking {
         val app = ApplicationProvider.getApplicationContext<TranslateApplication>()
         app.settings.update(SettingsChange(translationMode = TranslationMode.ZH_JA))

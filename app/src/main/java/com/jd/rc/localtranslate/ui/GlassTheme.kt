@@ -3,7 +3,6 @@ package com.jd.rc.localtranslate.ui
 import android.app.Activity
 import android.content.ContextWrapper
 import androidx.core.view.WindowCompat
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -14,30 +13,63 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.*
-import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalView
 import com.jd.rc.localtranslate.data.ThemeMode
 import com.jd.rc.localtranslate.data.UserSettings
 
-val Jade = Color(0xFF126F65)
-val Coral = Color(0xFFAE514E)
-private val LightColors = lightColorScheme(primary = Jade, onPrimary = Color.White,
-    primaryContainer = Color(0xFFD7EEE7), onPrimaryContainer = Color(0xFF14483F),
-    secondary = Coral, secondaryContainer = Color(0xFFF0E1DE), onSecondaryContainer = Color(0xFF653C37),
-    surface = Color(0xFFF3F6F5), onSurface = Color(0xFF202D2B),
-    onSurfaceVariant = Color(0xFF52645F), surfaceVariant = Color(0xFFE1EBE7),
-    background = Color(0xFFEDF3F1), outlineVariant = Color(0xFFC5D3CE))
-private val DarkColors = darkColorScheme(primary = Color(0xFF93DACA), onPrimary = Color(0xFF003B32),
-    primaryContainer = Color(0xFF244B43), onPrimaryContainer = Color(0xFFBCECDF),
-    secondary = Color(0xFFF0ABA2), secondaryContainer = Color(0xFF553B36), onSecondaryContainer = Color(0xFFEEC6BD),
-    surface = Color(0xFF192321), onSurface = Color(0xFFE5EEEA),
-    onSurfaceVariant = Color(0xFFB6C8C0), surfaceVariant = Color(0xFF2D3C37),
-    background = Color(0xFF111C19), outlineVariant = Color(0xFF43574F))
+private val LightColors = lightColorScheme(
+    primary = Color(0xFF79572D), onPrimary = Color(0xFFFFF8E8),
+    primaryContainer = Color(0xFFEEE1C4), onPrimaryContainer = Color(0xFF3E2C15),
+    secondary = Color(0xFF885548), onSecondary = Color(0xFFFFF7ED),
+    secondaryContainer = Color(0xFFF3E5DD), onSecondaryContainer = Color(0xFF442B22),
+    tertiary = Color(0xFF68613A), onTertiary = Color(0xFFFFF8E8),
+    tertiaryContainer = Color(0xFFEDE7D1), onTertiaryContainer = Color(0xFF36321B),
+    background = Color(0xFFF6EFDF), onBackground = Color(0xFF342C20),
+    surface = Color(0xFFFCF7EB), onSurface = Color(0xFF342C20),
+    surfaceVariant = Color(0xFFF0E7D4), onSurfaceVariant = Color(0xFF655944),
+    surfaceTint = Color(0xFF79572D),
+    surfaceDim = Color(0xFFE7DDC9), surfaceBright = Color(0xFFFFFBF2),
+    surfaceContainerLowest = Color(0xFFFFFCF5), surfaceContainerLow = Color(0xFFFCF7EB),
+    surfaceContainer = Color(0xFFF8F1E2), surfaceContainerHigh = Color(0xFFF2E9D7),
+    surfaceContainerHighest = Color(0xFFEBE1CD),
+    outline = Color(0xFF88785E), outlineVariant = Color(0xFFD8CCB5),
+    inverseSurface = Color(0xFF393024), inverseOnSurface = Color(0xFFFAF0D9),
+    inversePrimary = Color(0xFFE4BF83))
+private val DarkColors = darkColorScheme(
+    primary = Color(0xFFE4BF83), onPrimary = Color(0xFF432D10),
+    primaryContainer = Color(0xFF5B4222), onPrimaryContainer = Color(0xFFF6DCAE),
+    secondary = Color(0xFFE4B6A3), onSecondary = Color(0xFF482A20),
+    secondaryContainer = Color(0xFF654034), onSecondaryContainer = Color(0xFFFFDACC),
+    tertiary = Color(0xFFD1C792), onTertiary = Color(0xFF383313),
+    tertiaryContainer = Color(0xFF504A28), onTertiaryContainer = Color(0xFFEDE3AC),
+    background = Color(0xFF211D16), onBackground = Color(0xFFF0E5CF),
+    surface = Color(0xFF2B251C), onSurface = Color(0xFFF0E5CF),
+    surfaceVariant = Color(0xFF483F30), onSurfaceVariant = Color(0xFFD0C2A7),
+    surfaceTint = Color(0xFFE4BF83),
+    surfaceDim = Color(0xFF211D16), surfaceBright = Color(0xFF514637),
+    surfaceContainerLowest = Color(0xFF19160F), surfaceContainerLow = Color(0xFF29231A),
+    surfaceContainer = Color(0xFF30291F), surfaceContainerHigh = Color(0xFF3B3226),
+    surfaceContainerHighest = Color(0xFF463C2E),
+    outline = Color(0xFF9B8D74), outlineVariant = Color(0xFF5B4F3C),
+    inverseSurface = Color(0xFFF0E5CF), inverseOnSurface = Color(0xFF342C20),
+    inversePrimary = Color(0xFF79572D))
 val LocalOpaque = compositionLocalOf { false }
 val LocalDark = compositionLocalOf { false }
+
+internal object UiSpacing {
+    val Page = 16.dp
+    val Panel = 8.dp
+}
+
+private val PaperShapes = Shapes(
+    extraSmall = RoundedCornerShape(4.dp),
+    small = RoundedCornerShape(8.dp),
+    medium = RoundedCornerShape(8.dp),
+    large = RoundedCornerShape(12.dp),
+    extraLarge = RoundedCornerShape(16.dp),
+)
 
 @Composable
 fun GlassTheme(settings: UserSettings, content: @Composable () -> Unit) {
@@ -51,7 +83,7 @@ fun GlassTheme(settings: UserSettings, content: @Composable () -> Unit) {
         }
     } }
     CompositionLocalProvider(LocalOpaque provides settings.reduceTransparency, LocalDark provides dark) {
-        MaterialTheme(colorScheme = if (dark) DarkColors else LightColors) {
+        MaterialTheme(colorScheme = if (dark) DarkColors else LightColors, shapes = PaperShapes) {
             CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface, content = content)
         }
     }
@@ -59,40 +91,17 @@ fun GlassTheme(settings: UserSettings, content: @Composable () -> Unit) {
 
 @Composable
 fun GlassBackdrop(modifier: Modifier = Modifier) {
-    val dark = LocalDark.current
-    val base = MaterialTheme.colorScheme.background
-    Canvas(modifier.background(base)) {
-        val w = size.width; val h = size.height
-        val path = Path().apply {
-            moveTo(-w * .4f, h * .25f)
-            cubicTo(w * .25f, -h * .05f, w * .2f, h * .65f, w * 1.3f, h * .42f)
-        }
-        drawPath(path, Brush.linearGradient(listOf(
-            Color(0xFF75B9A7).copy(alpha = if (dark) .10f else .15f),
-            Color(0xFF94CCD2).copy(alpha = if (dark) .07f else .20f))), style = Stroke(w * .7f))
-        val lower = Path().apply {
-            moveTo(-w * .3f, h * .92f)
-            cubicTo(w * .35f, h * .72f, w * .7f, h * 1.05f, w * 1.25f, h * .62f)
-        }
-        drawPath(lower, Brush.linearGradient(listOf(Color(0xFFD0ABAE).copy(alpha = if (dark) .08f else .17f),
-            Color(0xFFB4CDC2).copy(alpha = .08f))), style = Stroke(w * .4f))
-        drawPath(path, Color.White.copy(alpha = if (dark) .025f else .22f), style = Stroke(1.dp.toPx()))
-    }
+    Box(modifier.background(MaterialTheme.colorScheme.background))
 }
 
 @Composable
-fun GlassSurface(modifier: Modifier = Modifier, radius: Int = 28, content: @Composable BoxScope.() -> Unit) {
-    val dark = LocalDark.current
+fun GlassSurface(modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit) {
     val opaque = LocalOpaque.current
-    val shape = RoundedCornerShape(radius.dp)
-    val surface = MaterialTheme.colorScheme.surface
-    val tint = if (dark) Color(0xFF4D655C) else Color.White
-    Box(modifier.shadow(if (opaque) 0.dp else 12.dp, shape, ambientColor = Color(0xFF294C40).copy(alpha = .08f),
-        spotColor = Color(0xFF294C40).copy(alpha = .12f)).clip(shape)
-        .background(if (opaque) Brush.linearGradient(listOf(surface, surface)) else Brush.linearGradient(
-            listOf(tint.copy(alpha = if (dark) .36f else .78f), surface.copy(alpha = .67f), tint.copy(alpha = if (dark) .20f else .51f)),
-            start = Offset.Zero, end = Offset(700f, 500f)))
-        .border(1.dp, Brush.linearGradient(listOf(Color.White.copy(alpha = if (dark) .27f else .95f),
-            MaterialTheme.colorScheme.outlineVariant.copy(alpha = .3f), Color.White.copy(alpha = if (dark) .1f else .7f))), shape),
+    val shape = MaterialTheme.shapes.large
+    val colors = MaterialTheme.colorScheme
+    Box(modifier.shadow(if (opaque) 0.dp else 2.dp, shape,
+        ambientColor = colors.onSurface.copy(alpha = .06f), spotColor = colors.onSurface.copy(alpha = .08f)).clip(shape)
+        .background(colors.surface)
+        .border(1.dp, colors.outlineVariant, shape),
         content = content)
 }

@@ -48,7 +48,7 @@ internal fun LicenseDialog(dismiss: () -> Unit) {
     }
     val blocks = remember(text) { licenseTextBlocks(text) }
     FoldAlertDialog(onDismissRequest = dismiss, title = { Text("开源许可") }, confirmButton = {
-        TextButton(onClick = { if (selected != null) selected = null else dismiss() }) { Text(if (selected != null) "返回" else "关闭") }
+        TextButton(onClick = { if (selected != null) selected = null else dismiss() }, shape = MaterialTheme.shapes.small) { Text(if (selected != null) "返回" else "关闭") }
     }, text = {
         key(selected) {
             LazyColumn(Modifier.heightIn(max = 400.dp)) {

@@ -1,5 +1,6 @@
 #include <jni.h>
 #include "llama.h"
+#include <algorithm>
 #include <chrono>
 #include <memory>
 #include <mutex>
@@ -55,6 +56,18 @@ Java_com_jd_rc_localtranslate_inference_HyNative_create(JNIEnv* env, jobject, jb
     } catch (...) { fail(env, "Hy-MT2 initialization failed"); return 0; }
 }
 
+extern "C" JNIEXPORT void JNICALL
+Java_com_jd_rc_localtranslate_inference_HyNative_setThreads(JNIEnv* env, jobject, jlong handle, jint generation, jint prefill) {
+    try {
+        auto* engine = reinterpret_cast<Engine*>(handle);
+        if (!engine || !engine->context) throw std::runtime_error("Closed model");
+        if (generation < 1 || generation > 4 || prefill < 1 || prefill > 6)
+            throw std::invalid_argument("Invalid thread budget");
+        // The translator mutex serializes configuration, generation and release.
+        llama_set_n_threads(engine->context, generation, prefill);
+    } catch (...) { fail(env, "Hy-MT2 thread configuration failed"); }
+}
+
 extern "C" JNIEXPORT jbyteArray JNICALL
 Java_com_jd_rc_localtranslate_inference_HyNative_generate(JNIEnv* env, jobject, jlong handle, jbyteArray input, jbyteArray targetInput) {
     try {
@@ -64,7 +77,8 @@ Java_com_jd_rc_localtranslate_inference_HyNative_generate(JNIEnv* env, jobject, 
         if (text.size() > 4096 || text.find("<|") != std::string::npos || text.find("<｜") != std::string::npos)
             throw std::invalid_argument("Input exceeds limits or contains control markers");
         const auto target = bytes(env, targetInput);
-        const std::string language = target == "zh" ? "简体中文" : target == "ja" ? "日语" : target == "en" ? "英语" : "";
+        const std::string language = target == "zh" ? "简体中文" : target == "ja" ? "日语" : target == "en" ? "英语" :
+            target == "ko" ? "韩语" : target == "yue" ? "粤语" : "";
         if (language.empty()) throw std::runtime_error("Unsupported target language");
         const auto instruction = std::string("将以下文本翻译为") + language + "，注意只需要输出翻译后的结果，不要额外解释：\n" + text;
         // Exact single-user template embedded in the fixed official GGUF. The older

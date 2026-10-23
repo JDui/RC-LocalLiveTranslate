@@ -1,17 +1,62 @@
 package com.jd.rc.localtranslate.core
 
-enum class SourceLanguage(val label: String) { ZH("中文"), EN("English"), JA("日本語"), UNKNOWN("未知语言") }
-enum class TranslationMode(val label: String, private val first: SourceLanguage?, private val second: SourceLanguage?) {
-    TO_ZH("译中文", null, SourceLanguage.ZH),
-    ZH_JA("中 ↔ 日", SourceLanguage.ZH, SourceLanguage.JA),
-    ZH_EN("中 ↔ 英", SourceLanguage.ZH, SourceLanguage.EN),
-    EN_JA("英 ↔ 日", SourceLanguage.EN, SourceLanguage.JA);
+enum class SourceLanguage(val label: String, val code: String) {
+    ZH("中文", "zh"), EN("English", "en"), JA("日本語", "ja"), KO("韩语", "ko"), YUE("粤语", "yue"), UNKNOWN("未知语言", "unknown");
+
+    companion object {
+        val supported = entries.filter { it != UNKNOWN }
+        fun fromAsrTag(tag: String): SourceLanguage {
+            val code = tag.trim().lowercase(java.util.Locale.ROOT).removePrefix("<|").removeSuffix("|>")
+            return supported.find { it.code == code } ?: UNKNOWN
+        }
+    }
+}
+
+/** A null first language routes every recognized language to the second language. */
+data class TranslationMode(val first: SourceLanguage?, val second: SourceLanguage) {
+    init {
+        require(first != SourceLanguage.UNKNOWN && second != SourceLanguage.UNKNOWN && first != second)
+    }
+    val label: String get() = "${first?.label ?: "自动识别"} ${if (first == null) "→" else "↔"} ${second.label}"
+    val name: String get() = when (this) {
+        TO_ZH -> "TO_ZH"
+        ZH_JA -> "ZH_JA"
+        ZH_EN -> "ZH_EN"
+        EN_JA -> "EN_JA"
+        else -> "PAIR_${first?.name ?: "AUTO"}_${second.name}"
+    }
+    fun withFirst(language: SourceLanguage?): TranslationMode =
+        TranslationMode(language, if (language == second) first ?: SourceLanguage.supported.first { it != language } else second)
+    fun withSecond(language: SourceLanguage): TranslationMode =
+        TranslationMode(if (language == first) second else first, language)
     fun target(source: SourceLanguage): SourceLanguage? = when {
         source == SourceLanguage.UNKNOWN -> null
         first == null -> second.takeUnless { source == it }
         source == first -> second
         source == second -> first
         else -> null
+    }
+
+    companion object {
+        val TO_ZH = TranslationMode(null, SourceLanguage.ZH)
+        val ZH_JA = TranslationMode(SourceLanguage.ZH, SourceLanguage.JA)
+        val ZH_EN = TranslationMode(SourceLanguage.ZH, SourceLanguage.EN)
+        val EN_JA = TranslationMode(SourceLanguage.EN, SourceLanguage.JA)
+
+        fun fromStored(value: String?): TranslationMode {
+            when (value) {
+                "TO_ZH" -> return TO_ZH
+                "ZH_JA" -> return ZH_JA
+                "ZH_EN" -> return ZH_EN
+                "EN_JA" -> return EN_JA
+            }
+            val parts = value?.split('_') ?: return TO_ZH
+            if (parts.size != 3 || parts[0] != "PAIR") return TO_ZH
+            return runCatching {
+                TranslationMode(if (parts[1] == "AUTO") null else SourceLanguage.valueOf(parts[1]),
+                    SourceLanguage.valueOf(parts[2]))
+            }.getOrDefault(TO_ZH)
+        }
     }
 }
 enum class CaptionStage(val label: String) { PARTIAL("识别中"), FINAL("已确认"), REVISED("已修订") }

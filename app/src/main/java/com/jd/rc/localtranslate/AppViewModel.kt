@@ -68,7 +68,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
         mutableLive.update { it.copy(running = true, paused = false) }
         demoJob = viewModelScope.launch {
-            while (demoStep < 28) {
+            while (demoStep < demoSamples.size * 4) {
                 delay(650)
                 val row = demoStep / 4
                 val phase = demoStep % 4
@@ -156,21 +156,30 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
     private data class DemoSample(val language: SourceLanguage, val source: String, val target: String, val speaker: String,
-        val english: String = source, val japanese: String = source) {
+        val english: String = source, val japanese: String = source, val korean: String, val cantonese: String) {
         fun translated(language: SourceLanguage?) = when (language) {
             SourceLanguage.ZH -> target
             SourceLanguage.EN -> english
             SourceLanguage.JA -> japanese
+            SourceLanguage.KO -> korean
+            SourceLanguage.YUE -> cantonese
             else -> ""
         }
     }
     private val demoSamples = listOf(
-        DemoSample(SourceLanguage.EN, "Shall we take a walk by the river after the meeting?", "会议结束后，我们去河边走走好吗？", "A", japanese = "会議の後、川沿いを散歩しませんか？"),
-        DemoSample(SourceLanguage.JA, "いいですね。夕方は少し涼しくなりそうです。", "好呀，傍晚应该会凉快一些。", "B", english = "Sounds good. It should be cooler this evening."),
-        DemoSample(SourceLanguage.ZH, "那我们六点在楼下见，顺便一起吃晚饭。", "", "A", "Then let us meet downstairs at six and have dinner together.", "それでは六時に下で会って、一緒に夕食を食べましょう。"),
-        DemoSample(SourceLanguage.EN, "Perfect. I know a quiet place just around the corner.", "太好了。拐角附近有一家安静的小店。", "B", japanese = "いいですね。角を曲がった所に静かなお店があります。"),
-        DemoSample(SourceLanguage.JA, "予約は必要ですか？", "需要预约吗？", "A", english = "Do we need a reservation?"),
-        DemoSample(SourceLanguage.ZH, "我先打电话问一下，稍后告诉你。", "", "B", "I will call and ask, then let you know.", "電話で確認して、後でお知らせします。"),
-        DemoSample(SourceLanguage.EN, "Thank you. See you downstairs at six.", "谢谢，六点楼下见。", "A", japanese = "ありがとう。六時に下で会いましょう。"),
+        DemoSample(SourceLanguage.EN, "Shall we take a walk by the river after the meeting?", "会议结束后，我们去河边走走好吗？", "A", japanese = "会議の後、川沿いを散歩しませんか？",
+            korean = "회의가 끝나면 강가를 산책할까요?", cantonese = "開完會之後，我哋去河邊行吓好唔好？"),
+        DemoSample(SourceLanguage.JA, "いいですね。夕方は少し涼しくなりそうです。", "好呀，傍晚应该会凉快一些。", "B", english = "Sounds good. It should be cooler this evening.",
+            korean = "좋아요. 저녁에는 좀 시원해질 것 같아요.", cantonese = "好呀，傍晚應該會涼啲。"),
+        DemoSample(SourceLanguage.ZH, "那我们六点在楼下见，顺便一起吃晚饭。", "", "A", "Then let us meet downstairs at six and have dinner together.", "それでは六時に下で会って、一緒に夕食を食べましょう。",
+            korean = "그럼 여섯 시에 아래층에서 만나서 같이 저녁을 먹어요.", cantonese = "咁我哋六點喺樓下見，順便一齊食晚飯。"),
+        DemoSample(SourceLanguage.KO, "좋아요. 모퉁이에 조용한 식당이 있어요.", "好呀，拐角处有一家安静的餐厅。", "B", "Sounds good. There is a quiet restaurant around the corner.", "いいですね。角を曲がった所に静かなレストランがあります。",
+            korean = "좋아요. 모퉁이에 조용한 식당이 있어요.", cantonese = "好呀，轉角有間好靜嘅餐廳。"),
+        DemoSample(SourceLanguage.YUE, "使唔使訂位呀？", "需要预约吗？", "A", "Do we need a reservation?", "予約は必要ですか？",
+            korean = "예약이 필요한가요?", cantonese = "使唔使訂位呀？"),
+        DemoSample(SourceLanguage.ZH, "我先打电话问一下，稍后告诉你。", "", "B", "I will call and ask, then let you know.", "電話で確認して、後でお知らせします。",
+            korean = "먼저 전화로 물어보고 나중에 알려 드릴게요.", cantonese = "我打個電話問吓先，遲啲話你知。"),
+        DemoSample(SourceLanguage.EN, "Thank you. See you downstairs at six.", "谢谢，六点楼下见。", "A", japanese = "ありがとう。六時に下で会いましょう。",
+            korean = "고마워요. 여섯 시에 아래층에서 만나요.", cantonese = "唔該晒，六點樓下見。"),
     )
 }

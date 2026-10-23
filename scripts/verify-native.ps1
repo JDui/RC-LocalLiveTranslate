@@ -62,7 +62,7 @@ try {
     try {
         $hySymbols = & $nm -D --defined-only $hyExtracted
         if ($LASTEXITCODE -ne 0) { throw 'Hy-MT2 symbol inspection failed' }
-        foreach ($name in @('create', 'generate', 'release')) {
+        foreach ($name in @('create', 'setThreads', 'generate', 'release')) {
             if (!($hySymbols | Select-String "Java_com_jd_rc_localtranslate_inference_HyNative_${name}$")) { throw "Missing Hy-MT2 JNI: $name" }
         }
         Write-Output 'APK Hy-MT2 JNI / fixed STQ source inventory PASS'

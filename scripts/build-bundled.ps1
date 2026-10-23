@@ -1,5 +1,5 @@
 #requires -Version 7.0
-param([string]$OutputFile = '')
+param([string]$Version = '0.1.0-prealpha.5', [string]$OutputFile = '')
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 $assets = Join-Path $root '.tools/bundled-model-assets/bundled-models'
@@ -18,4 +18,4 @@ foreach ($id in $packages.Keys) {
 }
 & (Join-Path $PSScriptRoot 'build.ps1') -Tasks @(':app:assembleRelease', ':app:lintRelease', '-PbundledModels=true', '--no-daemon', '--max-workers=2')
 if ($LASTEXITCODE -ne 0) { throw 'Bundled APK build failed' }
-& (Join-Path $PSScriptRoot 'package-prealpha.ps1') -Version '0.1.0-prealpha.4' -BundledModels -OutputFile $OutputFile
+& (Join-Path $PSScriptRoot 'package-prealpha.ps1') -Version $Version -BundledModels -OutputFile $OutputFile

@@ -12,20 +12,24 @@ import java.io.File
 
 internal interface HyApi {
     fun create(path: ByteArray): Long
+    fun setThreads(handle: Long, generation: Int, prefill: Int)
     fun generate(handle: Long, text: ByteArray, target: ByteArray): ByteArray
     fun release(handle: Long)
 }
 internal object HyNative : HyApi {
     init { System.loadLibrary("rc_hymt") }
     external override fun create(path: ByteArray): Long
+    external override fun setThreads(handle: Long, generation: Int, prefill: Int)
     external override fun generate(handle: Long, text: ByteArray, target: ByteArray): ByteArray
     external override fun release(handle: Long)
 }
-internal class HyTranslator(private val model: File, private val api: HyApi = HyNative) {
+internal class HyTranslator(private val model: File, private val api: HyApi = HyNative,
+    private val processors: () -> Int = { Runtime.getRuntime().availableProcessors() }) {
     private val mutex = Mutex()
     private var handle = 0L
     private var closed = false
-    suspend fun translate(text: String, target: SourceLanguage = SourceLanguage.ZH): String = withContext(Dispatchers.IO) {
+    suspend fun translate(text: String, target: SourceLanguage = SourceLanguage.ZH,
+        highPerformance: Boolean = true): String = withContext(Dispatchers.IO) {
         require(target != SourceLanguage.UNKNOWN)
         require('\u0000' !in text && "<|" !in text && "<｜" !in text && text.toByteArray(Charsets.UTF_8).size <= 4096)
         mutex.withLock {
@@ -33,7 +37,9 @@ internal class HyTranslator(private val model: File, private val api: HyApi = Hy
             if (text.isBlank()) return@withLock ""
             currentCoroutineContext().ensureActive()
             if (handle == 0L) handle = api.create(model.path.toByteArray(Charsets.UTF_8)).also { check(it != 0L) }
-            val result = api.generate(handle, text.toByteArray(Charsets.UTF_8), target.name.lowercase().toByteArray(Charsets.UTF_8)).toString(Charsets.UTF_8).trim()
+            val budget = HyThreadBudget.resolve(processors(), highPerformance)
+            api.setThreads(handle, budget.generation, budget.prefill)
+            val result = api.generate(handle, text.toByteArray(Charsets.UTF_8), target.code.toByteArray(Charsets.UTF_8)).toString(Charsets.UTF_8).trim()
             currentCoroutineContext().ensureActive()
             check(result.isNotBlank() && "<think>" !in result && "</think>" !in result && "<｜" !in result && "<|" !in result) {
                 "Hy-MT2 returned an incomplete translation"

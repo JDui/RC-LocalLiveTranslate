@@ -8,7 +8,7 @@ import org.json.JSONObject
 import kotlin.math.ceil
 
 enum class RunSource { UNSPECIFIED, ANDROID_MICROPHONE, ANDROID_TEST_FIXTURE, HOST_SYNTHETIC }
-enum class InferenceStage { MODEL_INIT, MODEL_RELEASE, VAD, RESAMPLE, ASR_PARTIAL, ASR_FINAL, SPEAKER, SPEAKER_TRACKING, TRANSLATE_EN, TRANSLATE_JA, TRANSLATE_ZH }
+enum class InferenceStage { MODEL_INIT, MODEL_RELEASE, VAD, RESAMPLE, ASR_PARTIAL, ASR_FINAL, SPEAKER, SPEAKER_TRACKING, TRANSLATE_EN, TRANSLATE_JA, TRANSLATE_ZH, TRANSLATE_KO, TRANSLATE_YUE }
 enum class CallOutcome { COMPLETE, FAILED, CANCELLED }
 data class DiagnosticModel(val id: String, val version: String, val expectedHashes: Map<String, String>)
 data class ProcessSample(val elapsedMillis: Long = 0, val pssBytes: Long? = null, val rssBytes: Long? = null,

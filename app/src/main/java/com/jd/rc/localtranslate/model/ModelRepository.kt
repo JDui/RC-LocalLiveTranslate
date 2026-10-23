@@ -20,10 +20,10 @@ import java.util.zip.ZipInputStream
 
 data class ModelSlot(val id: String, val title: String, val description: String)
 val modelSlots = listOf(
-    ModelSlot("sensevoice", "SenseVoice Small", "中 / 英 / 日 · 语音识别与语言检测"),
+    ModelSlot("sensevoice", "SenseVoice Small", "中 / 英 / 日 / 韩 / 粤 · 语音识别与语言检测"),
     ModelSlot("silero-vad", "Silero VAD", "语音活动检测"),
     ModelSlot("speaker", "Speaker Embedding", "会话内说话人分离"),
-    ModelSlot("hy-mt2", "Hy-MT2 1.8B · 1.25-bit", "中 / 英 / 日互译"),
+    ModelSlot("hy-mt2", "Hy-MT2 1.8B · 1.25-bit", "中 / 英 / 日 / 韩 / 粤互译"),
 )
 data class InstalledModel(val id: String, val version: String, val license: String,
     val source: String, val sizeBytes: Long)

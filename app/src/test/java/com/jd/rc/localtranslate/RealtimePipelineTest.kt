@@ -64,6 +64,29 @@ class RealtimePipelineTest {
         }
         return offset
     }
+    @Test fun translationWorkerAppliesLatestBudgetBeforeEachSegment() = runBlocking {
+        val runtime = MutableStateFlow(RuntimePerformance())
+        val applied = java.util.concurrent.CopyOnWriteArrayList<Boolean>()
+        val translated = java.util.concurrent.CopyOnWriteArrayList<Boolean>()
+        val engines = object : SpeechEngines by Engines() {
+            override fun configureTranslation(highPerformance: Boolean) { applied += highPerformance }
+            override suspend fun translate(text: String, language: SourceLanguage, target: SourceLanguage): String {
+                translated += applied.last()
+                return "你好"
+            }
+        }
+        val store = ConversationStore().apply { begin("session") }
+        val pipeline = RealtimePipeline("session", engines, store, this, runtime)
+        var offset = 0L
+        try {
+            for ((index, mode) in listOf(PerformanceMode.AUTO, PerformanceMode.ECO, PerformanceMode.AUTO).withIndex()) {
+                runtime.value = PerformancePolicyController().evaluate(PressureSnapshot(), mode, index.toLong())
+                offset = feed(pipeline, offset, 40)
+                withTimeout(5000) { while (translated.size <= index) delay(1) }
+            }
+        } finally { pipeline.finish() }
+        assertEquals(listOf(true, false, true), translated.toList())
+    }
     @Test fun chineseJapanesePairPassesExplicitTargetAndSkipsEnglish() = runBlocking {
         val backing = Engines()
         val calls = mutableListOf<Pair<SourceLanguage, SourceLanguage>>()
@@ -84,6 +107,32 @@ class RealtimePipelineTest {
         assertEquals("おはようございます。", store.state.value.captions[0].targetText)
         assertEquals(TranslationStatus.NOT_REQUIRED, store.state.value.captions[1].translationStatus)
     }
+    @Test fun koreanCantonesePairRoutesBothWaysWithSeparateDiagnostics() = runBlocking {
+        val backing = Engines()
+        val calls = mutableListOf<Pair<SourceLanguage, SourceLanguage>>()
+        val engines = object : SpeechEngines by backing {
+            override fun recognize(samples: FloatArray) = if (samples.first() < .15f)
+                RecognizedSpeech("안녕하세요", SourceLanguage.KO) else RecognizedSpeech("你好呀", SourceLanguage.YUE)
+            override suspend fun translate(text: String, language: SourceLanguage, target: SourceLanguage): String {
+                calls += language to target
+                return if (target == SourceLanguage.YUE) "你好呀" else "안녕하세요"
+            }
+        }
+        val store = ConversationStore().apply { begin("session", TranslationMode(SourceLanguage.KO, SourceLanguage.YUE)) }
+        val diagnostics = RunDiagnostics(RunSource.HOST_SYNTHETIC)
+        val pipeline = RealtimePipeline("session", engines, store, this, diagnostics = diagnostics)
+        try {
+            val offset = feed(pipeline, 0, 40)
+            feed(pipeline, offset, 40, 6554)
+        } finally { pipeline.finish() }
+        assertEquals(listOf(SourceLanguage.KO to SourceLanguage.YUE, SourceLanguage.YUE to SourceLanguage.KO), calls)
+        assertEquals(listOf(SourceLanguage.YUE, SourceLanguage.KO), store.state.value.captions.map { it.targetLanguage })
+        assertTrue(store.state.value.captions.all { it.translationStatus == TranslationStatus.COMPLETE })
+        val timings = diagnostics.report().getJSONObject("timings")
+        assertEquals(1L, timings.getJSONObject("TRANSLATE_KO").getLong("completed"))
+        assertEquals(1L, timings.getJSONObject("TRANSLATE_YUE").getLong("completed"))
+    }
+
     @Test fun finalAsrTranslationAndSpeakerBackfillReachStore() = runBlocking {
         val engines = Engines(); val store = ConversationStore().apply { begin("session") }
         val pipeline = RealtimePipeline("session", engines, store, this)
