@@ -1,6 +1,37 @@
 # 当前发行验证记录
 
-日期：2026-10-26（Asia/Shanghai）。当前版本 0.1.0-prealpha.6 / versionCode 6。下述为本版证据；后面的 prealpha.5、发行前及 prealpha.4 记录保留各自当时的验证范围。
+日期：2026-10-26（Asia/Shanghai）。当前版本 0.3.3 / versionCode 303，按所有者要求作为正式版发布，公开附件改为四模型整合 APK。下文历史段落的“未发布”“不提交”等描述保留其当时语境；prealpha.6 仅创建草稿，未公开发布。
+
+## 0.3.3 构建与回归
+
+无模型配置执行 `scripts/build.ps1 -Tasks @(':app:assembleRelease', ':app:testDebugUnitTest', ':app:lintRelease', ':app:assembleDebugAndroidTest', '--no-daemon', '--max-workers=2')`，BUILD SUCCESSFUL in 3m 17s，117 tasks / 36 executed。21 suites / 220 tests，0 failures / errors / skipped，含 59 项 Compose 测试。覆盖衬线字体切换及持久化、大字体与铰链布局、按钮嵌套几何、重命名 / 删除 / 空态及已有声纹 / 五语管线回归。Release lint 0 errors / 16 warnings，保留原生注释、Kapt 与版本提示。
+
+无模型版使用新通用 `package-release.ps1 -Version 0.3.3` 签名；旧 `package-prealpha.ps1` 保留兼容转发。原项目签名不更换，权重、APK 和签名材料不提交 Git。
+
+四模型配置执行 `scripts/build-bundled.ps1 -Version 0.3.3`，BUILD SUCCESSFUL in 1m 54s，56 tasks / 9 executed，Release lint 0 errors / 16 warnings。两包 minSdk 28、targetSdk 36、ARM64、不可调试；签名验证通过，且与重新下载的旧公开 prealpha.5 APK 证书一致。五个 ELF 和 APK ZIP 的 16 KB 对齐、必需 JNI、no-TTS 与固定 STQ 来源门禁全部通过。最终整合 APK 中恰有四模型 ZIP，分别提取后用 `verify-model-package.ps1` 验证固定版本、文件大小 / SHA-256、完整文件清单及来源通知，全部通过；无模型 APK 无模型 ZIP、ONNX 或 GGUF。
+
+| 制品（`.tools/releases/`） | 字节数 | 发行范围 |
+| --- | --- | --- |
+| `RC-LocalLiveTranslate-0.3.3-arm64.apk` | 81,180,503（77.4 MiB） | 无模型，本地保留 |
+| `RC-LocalLiveTranslate-0.3.3-arm64-bundled.apk` | 719,644,824（686.3 MiB） | 四模型，唯一公开附件 |
+
+本轮使用独立 `RC_LLT_Release033_API35` AVD（API 35 x86_64，ARM64 翻译，2 核 / 2 GiB），保留既有审查模拟器的应用与数据。无模型签名 Release APK 全新安装为 0/4；同签名 AndroidTest 的 `NativeRuntimeSmokeTest` 为 OK（2 tests，0.312 秒），验证 sherpa 1.13.8 / ORT 1.28.2 JNI、下载权限及 Hy JNI 缺失模型拒绝路径，不是实际模型推理。
+
+同签名覆盖安装本版整合 APK 后，生产导入器安装四模型并显示 4/4；整合包再执行同组 JNI 冒烟为 OK（2 tests，0.281 秒）。只验证文件安装和 JNI 路径，未执行真人语音模型推理。
+
+README 的 11 张图均重新拍摄本版签名 APK：主界面的 10 张来自整合版，0/4 下载入口来自无模型版。手机 1080×2520 / 480 dpi、展开 1800×1920 / 320 dpi，系统字体 100%；保留原始完整 PNG，无图像裁切 / 缩放。人工逐张查看，图片尺寸、同期 UIAutomator 标签及各页 Dock 坐标通过脚本检查。字幕与记录明确为演示，不构成真实推理；运行页保留未监测 / 不可用。证据在 `.tools/release033-screenshots/` 和 `release033-screenshot-verification.log`。本版未执行 ARM64 实体手机、真实模型质量 / 延迟、长期热机 / 电池或 OEM 折叠验收。
+
+本地日志：`.tools/release033-standard-build.log`、`release033-standard-package.log`、`release033-standard-smoke.log`；lint 快照 `.tools/release033-standard-lint.*`，220 项测试 XML 在 `.tools/releases/release033-host-tests/`。
+
+整合日志 `.tools/release033-bundled-build.log`、`release033-bundled-smoke.log`；模型完整性见 `release033-artifact-verification.log`。初次签名比较因本地旧 prealpha.4 文件已不存在而中断；改用从 GitHub 重新下载的公开 prealpha.5 进行独立证书比较，通过记录在 `release033-identity-verification.log`，制品元数据在 `release033-apk-results.json`，没有重复进行已通过的模型摘要校验。
+
+## prealpha.6 及发行前历史记录
+
+## 2026-10-26 衬线字体设置（源码更新，未发布）
+
+设置“显示”区新增默认开启的“衬线字体”，旧 DataStore 缺少该键时也默认开启。全局 Material Typography 的 15 个文本样式统一选择系统 Serif / SansSerif；不引入字体下载或字体资产。字段级设置更新、整份设置写入及重新读取均覆盖新字段。
+
+执行 `:app:assembleDebug :app:testDebugUnitTest --tests com.jd.rc.localtranslate.ComposeUiTest --tests com.jd.rc.localtranslate.LocalDataTest :app:lintDebug`，BUILD SUCCESSFUL in 1m 22s。48 项 Compose 与 13 项本地数据测试通过，0 failures / errors / skipped；新增测试检查默认开启、双向切换后的实际文本布局字体族、持久化恢复及修改其他字段时保持字体和隐私设置。已查看主机设置页截图 `app/build/ui-screenshots/settings.png`；日志 `.tools/serif-font-validation.log`。本轮未进行真机字体 / OEM 字形回退验收，也未更新公开 Release。
 
 ## prealpha.6 两种 Release 制品与回归
 
@@ -138,3 +169,15 @@ README截图来自签名Release：1080×2520 / 480dpi竖屏（21:9、360×840dp�
 已人工查看主机原生图形截图：`live-expanded.png`、`live-dark.png`、`five-language-narrow-large-font.png`、`settings.png`、`settings-dual-screen.png`、`settings-runtime-fold.png`、`session-swipe-revealed.png`、`dock-expanded-model-settings.png`，均位于 `app/build/ui-screenshots/`。截图证据为固定演示 / 合成数据，不是 Android 设备实拍。最终调试 APK：`app/build/outputs/apk/debug/app-debug.apk`；测试 APK 已编译，未运行 instrumentation。
 
 `adb devices -l` 仍无连接设备。未验收：真人 CAM++ 的短句 / 相似声线 / 跨语种准确率、实际首次标签耗时、句内连续换人分割、重叠语音、真实城市定位与 OEM 地理编码、实际折叠开合及持续录音。0.8 秒是软件首次尝试门槛，不是实测端到端延迟。系统城市服务可能联网，见 ADR-0008；语音推理不依赖该服务。本轮未提交、推送或更新公开 Release，保留工作区并行的应用显示名修改。
+
+## 2026-10-26 UI 全流程严格审查
+
+追加按钮圆角 / 嵌套边缘专项：录音主按钮上下右各 4 dp 等距内缩，外框 12 dp / 控件 8 dp，同层控制面板与横向导航左右同边且间隔 8 dp；工具按钮的实际按下反馈及城市 / 滑动删除按钮显式小圆角。Live 截图矩阵新增几何断言，原 360 dp 小屏字幕区 >=450 px 断言保留。最终日志 `.tools/ui-audit-button-final2.log`：BUILD SUCCESSFUL in 1m 37s，220 tests（Compose 59），0 failures / errors；lint 0 errors / 16 warnings。`.tools/ui-audit-button-native.log` 的 JNI 清单、无 TTS、STQ 来源及 ELF / ZIP 16 KB 门禁通过。曾因上下外距都加至 8 dp 触发阅读高度回归，已调整布局，未降低断言。最新 APK 模拟器按下 / 暂停 / 播放 / 320 dp 200% 字体证据在 `.tools/ui-audit/after/buttons/`。独立专项评分与审查器额度限制记录见 27_UI_AUDIT.md；不覆盖原全流程待验收状态。
+
+将所有者提供的 94 项检查分配到七个实际 UI 环节，确实不存在的卡片网格、表格和可拖拽浮动工具栏记为不适用，环境尚未验证的功能不移出清单。主线程统一公共间距、图标与点击目标，修复大字体主题按钮高度和字幕元数据分组、窄屏弹窗外距与滚动、危险确认配色、整行演示开关、城市保存反馈、空态说明及无报告禁用说明。已有默认衬线字体工作保留。逐项与独立 Luna Max 评分见 [27_UI_AUDIT.md](27_UI_AUDIT.md)，尚未达到连续两次全部满分，不宣告通过。
+
+最终 `scripts/build.ps1 -Tasks @(':app:assembleDebug', ':app:testDebugUnitTest', ':app:lintDebug', ':app:assembleDebugAndroidTest', ':app:assembleHyValidation', '--no-daemon', '--max-workers=2')` 成功，1m 38s / 123 tasks；21 suites / 220 tests，0 failures / errors，其中 ComposeUiTest 59 tests。lint 0 errors / 16 warnings。日志 `.tools/ui-audit-validation-final4.log`；`scripts/verify-native.ps1` 对最终 Debug APK 的必需 JNI、无 TTS、固定 STQ 来源清单及 ELF / APK ZIP 16 KB 对齐全部通过，日志 `.tools/ui-audit-native-final.log`。Android 测试 APK 仅编译，未执行 connected instrumentation。
+
+本轮启动 API 35 x86_64 Android 模拟器，以独立 `.hyvalidation` 包验证系统权限拒绝、语言菜单键盘操作、320 dp / 200% 字体及 IME 弹窗、SAF 导入四模型、模型详情 / 删除 / 重导入、演示记录与 TXT / SRT / JSON 实际保存、删除确认取消和两次独立左滑、手动城市保存及冷启动保留。截图和 XML 在 `.tools/ui-audit/after/`，导出内容为明确标记的演示字幕。原有主包因签名不兼容没有覆盖或卸载。模拟器显示参数已恢复为本轮开始时的 1080×2520 / 480 dpi / fontScale 1.0。
+
+验证边界：x86_64 模拟器无法加载生产 ARM64 原生库，实际拾音、暂停及由真实拾音产生的诊断导出未验收；模型下载实际进入失败状态，未验收真实传输取消；合成坐标城市查询进入失败回退，Geocoder 成功未验收；OEM 折叠 / 多窗口 / 真实 TalkBack 与真人模型质量仍缺物理设备证据。这些保留为适用但待验证，不能靠提高分数关闭。未提交或推送。

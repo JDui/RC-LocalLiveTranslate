@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalView
 import com.jd.rc.localtranslate.data.ThemeMode
@@ -61,18 +62,54 @@ val LocalDark = compositionLocalOf { false }
 internal object UiSpacing {
     val Page = 16.dp
     val Panel = 8.dp
+    // A 12 dp panel around an 8 dp control uses a concentric 4 dp inset.
+    val PanelInset = 4.dp
+    val Inline = 8.dp
+    val Compact = 4.dp
+    val Section = 24.dp
+    val TouchTarget = 48.dp
+    val Icon = 24.dp
+    val ActionIcon = 20.dp
+}
+
+internal object UiCorners {
+    val Control = 8.dp
+    val Panel = 12.dp
 }
 
 private val PaperShapes = Shapes(
     extraSmall = RoundedCornerShape(4.dp),
-    small = RoundedCornerShape(8.dp),
-    medium = RoundedCornerShape(8.dp),
-    large = RoundedCornerShape(12.dp),
+    small = RoundedCornerShape(UiCorners.Control),
+    medium = RoundedCornerShape(UiCorners.Control),
+    large = RoundedCornerShape(UiCorners.Panel),
     extraLarge = RoundedCornerShape(16.dp),
 )
 
+private fun paperTypography(serif: Boolean): Typography {
+    val family = if (serif) FontFamily.Serif else FontFamily.SansSerif
+    val base = Typography()
+    return Typography(
+        displayLarge = base.displayLarge.copy(fontFamily = family),
+        displayMedium = base.displayMedium.copy(fontFamily = family),
+        displaySmall = base.displaySmall.copy(fontFamily = family),
+        headlineLarge = base.headlineLarge.copy(fontFamily = family),
+        headlineMedium = base.headlineMedium.copy(fontFamily = family),
+        headlineSmall = base.headlineSmall.copy(fontFamily = family),
+        titleLarge = base.titleLarge.copy(fontFamily = family),
+        titleMedium = base.titleMedium.copy(fontFamily = family),
+        titleSmall = base.titleSmall.copy(fontFamily = family),
+        bodyLarge = base.bodyLarge.copy(fontFamily = family),
+        bodyMedium = base.bodyMedium.copy(fontFamily = family),
+        bodySmall = base.bodySmall.copy(fontFamily = family),
+        labelLarge = base.labelLarge.copy(fontFamily = family),
+        labelMedium = base.labelMedium.copy(fontFamily = family),
+        labelSmall = base.labelSmall.copy(fontFamily = family),
+    )
+}
+
 @Composable
 fun GlassTheme(settings: UserSettings, content: @Composable () -> Unit) {
+    val typography = remember(settings.serifFont) { paperTypography(settings.serifFont) }
     val dark = when (settings.theme) { ThemeMode.SYSTEM -> isSystemInDarkTheme(); ThemeMode.LIGHT -> false; ThemeMode.DARK -> true }
     val view = LocalView.current
     val activity = generateSequence(view.context) { (it as? ContextWrapper)?.baseContext }.filterIsInstance<Activity>().firstOrNull()
@@ -83,7 +120,7 @@ fun GlassTheme(settings: UserSettings, content: @Composable () -> Unit) {
         }
     } }
     CompositionLocalProvider(LocalOpaque provides settings.reduceTransparency, LocalDark provides dark) {
-        MaterialTheme(colorScheme = if (dark) DarkColors else LightColors, shapes = PaperShapes) {
+        MaterialTheme(colorScheme = if (dark) DarkColors else LightColors, shapes = PaperShapes, typography = typography) {
             CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface, content = content)
         }
     }

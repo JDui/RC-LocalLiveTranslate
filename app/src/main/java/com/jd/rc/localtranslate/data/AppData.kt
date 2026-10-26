@@ -24,19 +24,21 @@ enum class ThemeMode(val label: String) { SYSTEM("跟随系统"), LIGHT("浅色"
 data class UserSettings(val theme: ThemeMode = ThemeMode.SYSTEM, val bilingual: Boolean = true,
     val fontSize: Float = 19f, val keepSessions: Boolean = true, val reduceTransparency: Boolean = false,
     val performanceMode: PerformanceMode = PerformanceMode.AUTO,
-    val translationMode: TranslationMode = TranslationMode.TO_ZH, val sessionCity: String = "")
+    val translationMode: TranslationMode = TranslationMode.TO_ZH, val sessionCity: String = "", val serifFont: Boolean = true)
 
 /** Only explicit user changes are written; a stale UI snapshot cannot restore unrelated settings. */
 data class SettingsChange(val theme: ThemeMode? = null, val bilingual: Boolean? = null,
     val fontSize: Float? = null, val keepSessions: Boolean? = null, val reduceTransparency: Boolean? = null,
-    val performanceMode: PerformanceMode? = null, val translationMode: TranslationMode? = null, val sessionCity: String? = null) {
+    val performanceMode: PerformanceMode? = null, val translationMode: TranslationMode? = null, val sessionCity: String? = null,
+    val serifFont: Boolean? = null) {
     fun applyTo(current: UserSettings) = current.copy(theme = theme ?: current.theme,
         bilingual = bilingual ?: current.bilingual, fontSize = fontSize?.coerceIn(8f, 24f) ?: current.fontSize,
         keepSessions = keepSessions ?: current.keepSessions,
         reduceTransparency = reduceTransparency ?: current.reduceTransparency,
         performanceMode = performanceMode ?: current.performanceMode,
         translationMode = translationMode ?: current.translationMode,
-        sessionCity = sessionCity?.let(SessionTitle::normalizeCity) ?: current.sessionCity)
+        sessionCity = sessionCity?.let(SessionTitle::normalizeCity) ?: current.sessionCity,
+        serifFont = serifFont ?: current.serifFont)
 }
 
 class SettingsRepository(private val context: Context) {
@@ -48,6 +50,7 @@ class SettingsRepository(private val context: Context) {
     private val theme = stringPreferencesKey("theme")
     private val bilingual = booleanPreferencesKey("bilingual")
     private val font = floatPreferencesKey("font_size")
+    private val serif = booleanPreferencesKey("serif_font")
     private val keep = booleanPreferencesKey("keep_sessions")
     private val opaque = booleanPreferencesKey("reduce_transparency")
     private val city = stringPreferencesKey("session_city")
@@ -57,7 +60,7 @@ class SettingsRepository(private val context: Context) {
         UserSettings(ThemeMode.entries.find { mode -> mode.name == it[theme] } ?: ThemeMode.SYSTEM,
             it[bilingual] ?: true, (it[font] ?: 19f).coerceIn(8f, 24f), it[keep] ?: true, it[opaque] ?: false,
             PerformanceMode.entries.find { mode -> mode.name == it[performance] } ?: PerformanceMode.AUTO,
-            TranslationMode.fromStored(it[translation]), SessionTitle.normalizeCity(it[city].orEmpty()))
+            TranslationMode.fromStored(it[translation]), SessionTitle.normalizeCity(it[city].orEmpty()), it[serif] ?: true)
     }
     suspend fun canKeepSessions(): Boolean {
         if (keepIntent == false) return false
@@ -72,6 +75,7 @@ class SettingsRepository(private val context: Context) {
             change.theme?.let { value -> it[theme] = value.name }
             change.bilingual?.let { value -> it[bilingual] = value }
             change.fontSize?.let { value -> it[font] = value.coerceIn(8f, 24f) }
+            change.serifFont?.let { value -> it[serif] = value }
             change.keepSessions?.let { value -> it[keep] = value }
             change.reduceTransparency?.let { value -> it[opaque] = value }
             change.sessionCity?.let { value -> it[city] = SessionTitle.normalizeCity(value) }
@@ -80,7 +84,7 @@ class SettingsRepository(private val context: Context) {
         }
     }
     suspend fun update(value: UserSettings) = update(SettingsChange(value.theme, value.bilingual,
-        value.fontSize, value.keepSessions, value.reduceTransparency, value.performanceMode, value.translationMode, value.sessionCity))
+        value.fontSize, value.keepSessions, value.reduceTransparency, value.performanceMode, value.translationMode, value.sessionCity, value.serifFont))
 
     suspend fun updateCityIfUnchanged(expected: String, value: String): Boolean {
         var changed = false

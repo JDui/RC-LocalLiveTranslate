@@ -204,7 +204,10 @@ internal fun FoldAlertDialog(onDismissRequest: () -> Unit, title: @Composable ()
     dismissButton: @Composable () -> Unit = {}) {
     val plan = LocalPanePlan.current
     if (plan?.avoidsFold != true) {
-        AlertDialog(onDismissRequest, confirmButton, dismissButton = dismissButton, title = title, text = text,
+        AlertDialog(onDismissRequest, confirmButton, dismissButton = dismissButton, title = title,
+            text = { Box(Modifier.verticalScroll(rememberScrollState())) { text() } },
+            modifier = Modifier.widthIn(max = 560.dp).fillMaxWidth().padding(horizontal = 16.dp),
+            properties = DialogProperties(usePlatformDefaultWidth = false),
             shape = MaterialTheme.shapes.extraLarge)
         return
     }

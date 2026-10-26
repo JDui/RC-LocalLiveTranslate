@@ -8,7 +8,7 @@
 | 无 TTS JNI 的原生传递组件 | Kaldi / OpenFST / simple-sentencepiece Apache-2.0、KissFFT BSD-3-Clause、nlohmann JSON MIT、Eigen 5.0.1 MPL-2.0 及其兼容第三方条款 | 全文、公开源码版权行和固定 SOURCE 已随包保留；Eigen 未修改，保留对应源码取得方式 |
 | AndroidX Media3 common 1.11.1 / Sonic | Apache-2.0 | 随包保留全文及 AOSP / Bill Cox 署名，发行前核查传递依赖 |
 | llama.cpp / ggml STQ runtime | MIT，固定 PR #22836 提交 | 保留全文与 SOURCE；不编译网络工具，实验 PR 状态见 ADR-0006 |
-| 腾讯 Hy-MT2 1.8B 1.25-bit 权重 | 固定 revision 的 LICENSE.txt 为 Apache-2.0 | 本地包保留版权、完整许可、来源、发布者摘要；权重不提交 Git / APK |
+| 腾讯 Hy-MT2 1.8B 1.25-bit 权重 | 固定 revision 的 LICENSE.txt 为 Apache-2.0 | 模型包保留版权、完整许可、来源、发布者摘要；权重不提交 Git，0.3.3 整合 APK 内置固定 ZIP |
 | 旧 Bergamot/Mozilla MT 权重（退出当前运行路径） | Foxlet NOTICE 与 Mozilla 维护者声明 MPL-2.0；英中 2.2 / 日英 2.1 制品已锁定 | 本地包保留许可全文 / SOURCE；公开分发前复核适用源码取得方式 |
 | SenseVoice 源码 | MIT | 不等于权重许可证 |
 | SenseVoice 2024 基线权重 | 官方模型卡指向 FunASR Model License 1.1，全文和来源已随本地包保留 | 自定义权重条款；完整再分发审核未完成，不当作 MIT / Apache |
@@ -18,7 +18,7 @@
 
 参考：[Foxlet LICENSE](https://github.com/yinvoke/foxlet-translate/blob/main/LICENSE)、[Foxlet NOTICE](https://github.com/yinvoke/foxlet-translate/blob/main/NOTICE)、[SenseVoice LICENSE 指引](https://github.com/QwenAudio/SenseVoice)。暂不自动为本仓库添加任何许可证。
 
-五套模型的具体来源、固定许可提交与本地包保留项见 [14_MODEL_PREPARATION](14_MODEL_PREPARATION.md)。这些包仅在忽略目录准备，不捆绑或公开发布；完整再分发许可仍未审核完成。2025 粤语微调候选保留其 Apache 模型卡声明及 FunASR 底座条款，但未接受为三语 auto 基线。
+模型的具体来源、固定许可提交与模型包保留项见 [14_MODEL_PREPARATION](14_MODEL_PREPARATION.md)。0.3.3 按所有者要求公开四模型整合 APK；仅内置当前固定的 SenseVoice 2024、Silero、CAM++、Hy-MT2 ZIP，并随包保留各自许可与来源。权重只在忽略目录准备，不提交 Git；公开发行不等于完整再分发合规审查已完成。2025 粤语微调候选保留其 Apache 模型卡声明及 FunASR 底座条款，未纳入当前整合版。
 
 ## 离线、存储及隐私
 

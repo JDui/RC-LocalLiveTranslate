@@ -44,6 +44,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.core.net.toUri
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -129,17 +130,18 @@ internal fun GlassNavigation(selected: Page, rail: Boolean, onSelect: (Page) -> 
         val active = selected == page || (selected == Page.MODELS && page == Page.SETTINGS)
         Column(itemModifier.testTag("dock-${page.name.lowercase(Locale.ROOT)}").widthIn(min = 48.dp).clip(MaterialTheme.shapes.small)
             .background(if (active) colors.primaryContainer.copy(alpha = .85f) else Color.Transparent)
-            .selectable(active, role = Role.Tab, onClick = { onSelect(page) }).heightIn(min = 48.dp).padding(horizontal = 6.dp, vertical = 6.dp),
+            .selectable(active, role = Role.Tab, onClick = { onSelect(page) }).heightIn(min = UiSpacing.TouchTarget)
+            .padding(horizontal = UiSpacing.Inline, vertical = UiSpacing.Compact),
             horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(page.icon, page.title, tint = if (active) colors.primary else colors.onSurfaceVariant, modifier = Modifier.size(24.dp))
             Text(if (LocalDensity.current.fontScale > 1.5f) when (page) { Page.LIVE -> "字幕"; Page.MODELS -> "模型"; Page.SESSIONS -> "记录"; Page.SETTINGS -> "设置" } else page.title,
                 maxLines = 1,
-                fontSize = 11.sp, color = if (active) colors.primary else colors.onSurfaceVariant,
+                fontSize = 12.sp, color = if (active) colors.primary else colors.onSurfaceVariant,
                 fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal, modifier = Modifier.padding(top = 2.dp))
         }
     }
     if (rail) GlassSurface(Modifier.padding(UiSpacing.Panel).width(80.dp).fillMaxHeight().testTag("app-dock")) {
-        Column(Modifier.fillMaxSize().padding(4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(Modifier.fillMaxSize().padding(UiSpacing.PanelInset), horizontalAlignment = Alignment.CenterHorizontally) {
             Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf(Page.LIVE, Page.SESSIONS).forEach { content(it, Modifier.fillMaxWidth()) }
@@ -148,7 +150,7 @@ internal fun GlassNavigation(selected: Page, rail: Boolean, onSelect: (Page) -> 
             content(Page.SETTINGS, Modifier.fillMaxWidth())
         }
     } else GlassSurface(Modifier.padding(start = UiSpacing.Panel, end = UiSpacing.Panel, bottom = UiSpacing.Panel).fillMaxWidth().testTag("app-dock")) {
-        Row(Modifier.fillMaxWidth().padding(4.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+        Row(Modifier.fillMaxWidth().padding(UiSpacing.PanelInset), horizontalArrangement = Arrangement.SpaceEvenly) {
             Page.entries.filter { it != Page.MODELS }.forEach { content(it, Modifier.weight(1f)) }
         }
     }
@@ -167,14 +169,20 @@ private fun PageHeader(page: Page, onBack: (() -> Unit)? = null, trailing: @Comp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ToolButton(icon: ImageVector, label: String, enabled: Boolean = true, onClick: () -> Unit) {
+private fun ToolButton(icon: ImageVector, label: String, enabled: Boolean = true, destructive: Boolean = false, onClick: () -> Unit) {
     val plan = LocalPanePlan.current
     val baseProvider = TooltipDefaults.rememberPlainTooltipPositionProvider()
     val provider = remember(baseProvider, plan) { PanePopupPositionProvider(baseProvider, plan) }
     val width = with(LocalDensity.current) { (plan?.let { minOf(it.primary.width, it.controls.width) } ?: Int.MAX_VALUE).toDp() }
     TooltipBox(positionProvider = provider,
         tooltip = { PlainTooltip(modifier = Modifier.widthIn(max = minOf(240.dp, (width - 16.dp).coerceAtLeast(1.dp)))) { Text(label) } }, state = rememberTooltipState()) {
-        IconButton(onClick, enabled = enabled, modifier = Modifier.size(48.dp)) { Icon(icon, label) }
+        FilledTonalIconButton(onClick, enabled = enabled, shape = MaterialTheme.shapes.small,
+            modifier = Modifier.size(UiSpacing.TouchTarget),
+            colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = Color.Transparent,
+                disabledContainerColor = Color.Transparent,
+                contentColor = if (destructive) MaterialTheme.colorScheme.error else LocalContentColor.current)) {
+            Icon(icon, label, Modifier.size(UiSpacing.Icon))
+        }
     }
 }
 
@@ -210,9 +218,11 @@ internal fun LiveScreen(live: LiveState, recording: RecordingState, settings: Us
                 if (mode.first == null) "自动识别后翻译" else "双向互译", modifier = Modifier.size(20.dp))
             LanguageSelector(mode.second, SourceLanguage.supported.filter { it != mode.first }, "第二语言", canChange,
                 Modifier.weight(1f).testTag("second-language")) { changeMode(mode.withSecond(requireNotNull(it))) }
-            if (live.demo) Text("演示数据", color = MaterialTheme.colorScheme.primary,
+            if (live.demo && LocalDensity.current.fontScale <= 1.3f) Text("演示数据", color = MaterialTheme.colorScheme.primary,
                 style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(start = 8.dp))
         }
+        if (live.demo && LocalDensity.current.fontScale > 1.3f) Text("演示数据", color = MaterialTheme.colorScheme.primary,
+            style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = UiSpacing.Page))
         if (!live.demo && processing.liveWindowTrimmed) Text(
             if (settings.keepSessions) "显示最近 500 条，保留的内容可在对话记录查看" else "显示最近 500 条，记录保留已关闭",
             Modifier.padding(horizontal = UiSpacing.Page), style = MaterialTheme.typography.labelSmall)
@@ -273,12 +283,14 @@ internal fun LiveScreen(live: LiveState, recording: RecordingState, settings: Us
                 Text(if (notificationDenied) "通知未开启 · 可在应用中停止" else "开启录音状态通知", fontSize = 12.sp)
             }
         }
-        GlassSurface(Modifier.fillMaxWidth().padding(horizontal = UiSpacing.Panel, vertical = 4.dp).testTag("live-controls")) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = UiSpacing.Panel, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f).padding(end = 4.dp)) {
+        GlassSurface(Modifier.fillMaxWidth().padding(start = UiSpacing.Panel, end = UiSpacing.Panel,
+            top = UiSpacing.Compact, bottom = UiSpacing.Panel).testTag("live-controls")) {
+            Row(Modifier.fillMaxWidth().padding(UiSpacing.PanelInset).height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(UiSpacing.Compact),
+                verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f).padding(horizontal = UiSpacing.Compact)) {
                     Text(when { modelBusy -> "正在安装模型"; stopping -> "正在结束推理"; starting -> "正在加载模型"; paused -> "已暂停"; active -> if (live.demo) "演示播放中" else "拾音中"; else -> "准备就绪" },
-                        fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(formatTime(duration), fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(formatTime(duration), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 if (active && !live.demo && LocalDensity.current.fontScale <= 1.3f)
                     WaveMeter(recording.level, Modifier.width(48.dp).height(28.dp).padding(end = 8.dp))
@@ -287,9 +299,10 @@ internal fun LiveScreen(live: LiveState, recording: RecordingState, settings: Us
                     if (live.demo) { if (active) pauseDemo() else startDemo() }
                     else if (active) record(RecordingService.PAUSE) else startMicrophone()
                 }, enabled = !starting && !modelBusy, shape = MaterialTheme.shapes.small,
-                    contentPadding = PaddingValues(horizontal = 12.dp), modifier = Modifier.heightIn(min = 48.dp)) {
+                    contentPadding = PaddingValues(horizontal = 12.dp),
+                    modifier = Modifier.fillMaxHeight().heightIn(min = UiSpacing.TouchTarget).testTag("live-primary-action")) {
                     Icon(if (active) Icons.Outlined.Pause else if (live.demo || paused) Icons.Outlined.PlayArrow else Icons.Outlined.Mic, null, Modifier.size(20.dp))
-                    Spacer(Modifier.width(6.dp))
+                    Spacer(Modifier.width(UiSpacing.Inline))
                     Text(when { active -> "暂停"; paused -> "继续"; live.demo -> "播放演示"; else -> "开始拾音" })
                 }
             }
@@ -368,14 +381,19 @@ internal fun CaptionRow(item: SubtitleItem, settings: UserSettings) {
         extraBackground = badgeBackground, tint = 1f)
     val avatarSize = with(LocalDensity.current) { (12.sp.toDp() + 10.dp).coerceAtLeast(22.dp) }
     Column(Modifier.fillMaxWidth().padding(vertical = 6.dp).semantics(mergeDescendants = true) {}) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+            verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(avatarSize).background(badgeBackground, MaterialTheme.shapes.extraSmall), contentAlignment = Alignment.Center) {
                 Text(item.speakerId ?: "?", fontSize = 12.sp, color = speakerColor, fontWeight = FontWeight.Bold)
             }
             Text(item.speakerId?.let { "Speaker $it" } ?: "未知说话人", color = speakerColor, fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 8.dp).weight(1f))
-            Text(item.sourceLanguage.label, fontSize = 11.sp, color = colors.onSurfaceVariant)
-            Text(formatTime(item.elapsedSeconds), fontSize = 11.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(start = 10.dp))
+                fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = UiSpacing.Inline))
+            }
+            Row(Modifier.heightIn(min = avatarSize), verticalAlignment = Alignment.CenterVertically) {
+            Text(item.sourceLanguage.label, fontSize = 12.sp, color = colors.onSurfaceVariant)
+            Text(formatTime(item.elapsedSeconds), fontSize = 12.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(start = UiSpacing.Inline))
+            }
         }
         val translated = item.targetText.isNotBlank()
         if (settings.bilingual || !translated) Text(item.sourceText, fontSize = if (translated) (settings.fontSize - 2).coerceAtLeast(8f).sp else settings.fontSize.sp,
@@ -388,7 +406,7 @@ internal fun CaptionRow(item: SubtitleItem, settings: UserSettings) {
             item.stage != CaptionStage.PARTIAL && item.translationStatus == TranslationStatus.UNAVAILABLE && item.sourceLanguage != SourceLanguage.UNKNOWN -> "译文不可用"
             else -> item.stage.label
         },
-            fontSize = 10.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(top = 3.dp))
+            fontSize = 12.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(top = 3.dp))
         HorizontalDivider(Modifier.padding(top = 6.dp), color = colors.outlineVariant.copy(alpha = .55f))
     }
 }
@@ -404,7 +422,7 @@ internal fun ModelsScreen(state: ModelState, import: (Uri) -> Unit, delete: (Str
         PageHeader(Page.MODELS, onBack) { ToolButton(Icons.Outlined.FileUpload, "导入模型包", !state.busy && !state.inUse) { picker.launch(arrayOf("application/zip", "application/octet-stream")) } }
         Column(Modifier.padding(horizontal = UiSpacing.Page, vertical = 8.dp)) {
                 Text("${state.installed.size} / ${modelSlots.size} 已安装", fontSize = 24.sp, fontWeight = FontWeight.Medium)
-                if (state.inUse) Text("会话正在使用模型", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
+                if (state.inUse) Text("会话正在使用模型", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = UiSpacing.Inline))
                 if (state.downloading) {
                     LinearProgressIndicator(progress = { (state.downloadedBytes.toFloat() / state.downloadTotalBytes.coerceAtLeast(1)).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
                     Text("${formatDownloadBytes(state.downloadedBytes)} / ${formatDownloadBytes(state.downloadTotalBytes)}", style = MaterialTheme.typography.bodySmall)
@@ -434,7 +452,9 @@ internal fun ModelsScreen(state: ModelState, import: (Uri) -> Unit, delete: (Str
             Spacer(Modifier.height(24.dp))
     } })
     deleting?.let { slot -> FoldAlertDialog(onDismissRequest = { deleting = null }, title = { Text("删除模型？") },
-        text = { Text(slot.title) }, confirmButton = { TextButton(shape = MaterialTheme.shapes.small, onClick = { delete(slot.id); deleting = null }) { Text("删除") } },
+        text = { Text("${slot.title}\n删除后需重新下载或导入，才能继续使用此模型。") }, confirmButton = { TextButton(shape = MaterialTheme.shapes.small,
+            colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+            enabled = !state.busy && !state.inUse, onClick = { delete(slot.id); deleting = null }) { Text("删除") } },
         dismissButton = { TextButton(shape = MaterialTheme.shapes.small, onClick = { deleting = null }) { Text("取消") } }) }
 }
 
@@ -444,13 +464,13 @@ private fun ModelRow(slot: ModelSlot, state: ModelState, delete: () -> Unit) {
     val model = state.installed.find { it.id == slot.id }
     Row(Modifier.fillMaxWidth().padding(vertical = 16.dp), verticalAlignment = Alignment.Top) {
         Icon(if (model == null) Icons.Outlined.DownloadForOffline else Icons.Outlined.Verified,
-            null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 4.dp).size(26.dp))
+            null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 4.dp).size(UiSpacing.Icon))
         Column(Modifier.weight(1f).padding(horizontal = UiSpacing.Page)) {
             Text(slot.title, style = MaterialTheme.typography.titleMedium)
             Text(slot.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp))
             Text(if (model == null) "未安装" else "文件已校验", color = MaterialTheme.colorScheme.primary,
-                style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 10.dp))
+                style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = UiSpacing.Inline))
             model?.let {
                 val size = if (it.sizeBytes < 1024L * 1024) "${maxOf(1, it.sizeBytes / 1024)} KiB"
                     else "${it.sizeBytes / 1024 / 1024} MiB"
@@ -464,13 +484,14 @@ private fun ModelRow(slot: ModelSlot, state: ModelState, delete: () -> Unit) {
     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .5f))
     if (details && model != null) FoldAlertDialog(onDismissRequest = { details = false },
         title = { Text(slot.title) }, text = {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
+            Column {
                 Text("版本：${model.version}")
                 Text("许可：${model.license}", Modifier.padding(top = 12.dp))
                 SelectionContainer { Text(model.source, Modifier.padding(top = 12.dp)) }
             }
         }, confirmButton = { TextButton(shape = MaterialTheme.shapes.small, onClick = { details = false }) { Text("关闭") } },
         dismissButton = { TextButton(shape = MaterialTheme.shapes.small, enabled = !state.busy && !state.inUse,
+            colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
             onClick = { details = false; delete() }) { Text("删除模型") } })
 }
 
@@ -517,8 +538,8 @@ internal fun SessionsScreen(sessions: List<SavedSession>, settings: UserSettings
             if (sessions.isEmpty()) Column(Modifier.fillMaxSize().padding(UiSpacing.Page), horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center) {
                 Icon(Icons.Outlined.History, null, Modifier.size(52.dp), tint = MaterialTheme.colorScheme.primary)
-                Text("还没有对话记录", fontSize = 22.sp, modifier = Modifier.padding(top = 18.dp))
-                if (!settings.keepSessions) Text("本地记录已关闭", color = MaterialTheme.colorScheme.onSurfaceVariant,
+                Text("还没有对话记录", fontSize = 22.sp, modifier = Modifier.padding(top = UiSpacing.Section))
+                Text(if (settings.keepSessions) "开始拾音后，保留的对话会显示在这里。" else "本地记录已关闭，可在设置中开启保留。", color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 8.dp))
             } else LazyColumn(state = listState, modifier = Modifier.weight(1f).testTag("sessions-list"),
                 contentPadding = PaddingValues(horizontal = UiSpacing.Page, vertical = 8.dp)) {
@@ -532,13 +553,14 @@ internal fun SessionsScreen(sessions: List<SavedSession>, settings: UserSettings
                         .padding(vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.AutoMirrored.Outlined.Chat, null, tint = MaterialTheme.colorScheme.primary)
                         Column(Modifier.weight(1f).padding(horizontal = UiSpacing.Page)) {
-                            Text(SessionTitle.display(session), style = MaterialTheme.typography.titleMedium)
+                            Text(SessionTitle.display(session), style = MaterialTheme.typography.titleMedium,
+                                maxLines = 2, overflow = TextOverflow.Ellipsis)
                             Text(SimpleDateFormat("MM月dd日 HH:mm", Locale.CHINA).format(Date(session.createdAt)) + " · " + formatTime(session.durationSeconds),
-                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = UiSpacing.Inline))
                             if (session.isDemo) Text("演示数据", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary,
                                 modifier = Modifier.padding(top = 4.dp))
                         }
-                        ToolButton(Icons.Outlined.DeleteOutline, "删除会话 ${SessionTitle.display(session)}") { deleting = session }
+                        ToolButton(Icons.Outlined.DeleteOutline, "删除会话 ${SessionTitle.display(session)}", destructive = true) { deleting = session }
                     } }
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .5f))
                 }
@@ -557,7 +579,8 @@ internal fun SessionsScreen(sessions: List<SavedSession>, settings: UserSettings
         } else {
             Row(Modifier.fillMaxWidth().padding(horizontal = UiSpacing.Page, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (!dual) ToolButton(Icons.AutoMirrored.Outlined.ArrowBack, "返回记录列表") { selectedId = null }
-                Text(SessionTitle.display(selected), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                Text(SessionTitle.display(selected), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f),
+                    maxLines = 2, overflow = TextOverflow.Ellipsis)
                 ToolButton(Icons.Outlined.Edit, "重命名") { renaming = selected; title = SessionTitle.display(selected) }
                 Box {
                     ToolButton(Icons.Outlined.FileDownload, "导出") { exportMenu = true }
@@ -589,7 +612,9 @@ internal fun SessionsScreen(sessions: List<SavedSession>, settings: UserSettings
             }
             val captions = detail.page?.items.orEmpty()
             if (selected.isDemo) Text("演示数据", Modifier.padding(horizontal = UiSpacing.Page), color = MaterialTheme.colorScheme.secondary)
-            if (captions.isEmpty()) Spacer(Modifier.weight(1f)) else LazyColumn(state = detailState, modifier = Modifier.weight(1f).testTag("session-captions"), contentPadding = PaddingValues(UiSpacing.Page)) {
+            if (captions.isEmpty()) Box(Modifier.weight(1f).fillMaxWidth().padding(UiSpacing.Page), contentAlignment = Alignment.Center) {
+                if (!detail.loading && !detail.failed) Text("这段记录暂无字幕", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else LazyColumn(state = detailState, modifier = Modifier.weight(1f).testTag("session-captions"), contentPadding = PaddingValues(UiSpacing.Page)) {
                 items(captions, key = { it.segmentId }) { CaptionRow(it, settings) }
             }
         }
@@ -597,12 +622,15 @@ internal fun SessionsScreen(sessions: List<SavedSession>, settings: UserSettings
     })
     renaming?.let { session -> FoldAlertDialog(onDismissRequest = { renaming = null }, title = { Text("重命名会话") },
         text = { OutlinedTextField(title, { title = it.take(80) }, label = { Text("名称") }, singleLine = true,
+            isError = title.isBlank(), supportingText = { Text(if (title.isBlank()) "请输入会话名称" else "${title.length} / 80") },
             shape = MaterialTheme.shapes.small) },
-        confirmButton = { TextButton(shape = MaterialTheme.shapes.small, onClick = { rename(session.id, title); renaming = null }) { Text("保存") } },
+        confirmButton = { TextButton(shape = MaterialTheme.shapes.small, enabled = title.isNotBlank(), onClick = { rename(session.id, title.trim()); renaming = null }) { Text("保存") } },
         dismissButton = { TextButton(shape = MaterialTheme.shapes.small, onClick = { renaming = null }) { Text("取消") } }) }
     deleting?.let { session -> FoldAlertDialog(onDismissRequest = { deleting = null }, title = { Text("删除这段记录？") },
         text = { Text("${SessionTitle.display(session)}\n删除后无法恢复。") },
-        confirmButton = { TextButton(shape = MaterialTheme.shapes.small, onClick = { delete(session.id); if (selectedId == session.id) selectedId = null; deleting = null }) { Text("删除") } },
+        confirmButton = { TextButton(shape = MaterialTheme.shapes.small,
+            colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+            onClick = { delete(session.id); if (selectedId == session.id) selectedId = null; deleting = null }) { Text("删除") } },
         dismissButton = { TextButton(shape = MaterialTheme.shapes.small, onClick = { deleting = null }) { Text("取消") } }) }
 }
 
@@ -632,7 +660,7 @@ internal fun SwipeDeleteSession(session: SavedSession, onDelete: () -> Unit, con
                 })
         }) {
         if (revealed || drag < 0) Box(Modifier.matchParentSize().background(MaterialTheme.colorScheme.errorContainer), contentAlignment = Alignment.CenterEnd) {
-            TextButton(onClick = { latestDelete() }, modifier = Modifier.width(104.dp).fillMaxHeight(),
+            TextButton(onClick = { latestDelete() }, shape = MaterialTheme.shapes.small, modifier = Modifier.width(104.dp).fillMaxHeight(),
                 colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onErrorContainer)) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(Icons.Outlined.DeleteOutline, null)
@@ -687,17 +715,20 @@ internal fun SettingsScreen(settings: UserSettings, recording: RecordingState, u
             Column(Modifier.padding(horizontal = UiSpacing.Page, vertical = 8.dp)) {
                 SectionLabel("显示")
                 SettingSwitch("双语字幕", settings.bilingual) { update(SettingsChange(bilingual = it)) }
-                Text("字幕字号", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 18.dp))
+                SettingSwitch("衬线字体", settings.serifFont) { update(SettingsChange(serifFont = it)) }
+                Text("字幕字号", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = UiSpacing.Section))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Slider(settings.fontSize, { update(SettingsChange(fontSize = it)) }, valueRange = 8f..24f, steps = 15, modifier = Modifier.weight(1f))
+                    Slider(settings.fontSize, { update(SettingsChange(fontSize = it)) }, valueRange = 8f..24f, steps = 15,
+                        modifier = Modifier.weight(1f).semantics { contentDescription = "字幕字号"; stateDescription = "${settings.fontSize.toInt()} sp" })
                     Text("${settings.fontSize.toInt()}", modifier = Modifier.padding(start = 16.dp))
                 }
-                Text("字幕预览", fontSize = settings.fontSize.sp, modifier = Modifier.padding(vertical = 14.dp))
+                Text("字幕预览", fontSize = settings.fontSize.sp, modifier = Modifier.padding(vertical = UiSpacing.Page))
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .5f))
                 Text("外观", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 20.dp, bottom = 12.dp))
-                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
                     ThemeMode.entries.forEachIndexed { index, theme ->
                         SegmentedButton(settings.theme == theme, { update(SettingsChange(theme = theme)) },
+                            modifier = Modifier.fillMaxHeight(),
                             shape = SegmentedButtonDefaults.itemShape(index, 3, MaterialTheme.shapes.small), icon = {}) { Text(theme.label, fontSize = 12.sp) }
                     }
                 }
@@ -712,21 +743,24 @@ internal fun SettingsScreen(settings: UserSettings, recording: RecordingState, u
                     locationDenied = !granted
                     if (granted) fetchCity()
                 }
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(enabled = !cityBusy, onClick = { update(SettingsChange(sessionCity = cityDraft)) }) { Text("保存城市") }
-                    TextButton(enabled = !cityBusy, onClick = {
+                FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(UiSpacing.Inline)) {
+                    TextButton(shape = MaterialTheme.shapes.small, enabled = !cityBusy && SessionTitle.normalizeCity(cityDraft) != settings.sessionCity,
+                        modifier = Modifier.heightIn(min = UiSpacing.TouchTarget),
+                        onClick = { update(SettingsChange(sessionCity = cityDraft)) }) { Text("保存城市") }
+                    TextButton(shape = MaterialTheme.shapes.small, enabled = !cityBusy, onClick = {
                         locationDenied = false
                         if (context.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED) fetchCity()
                         else locationPermission.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
-                    }) { Text(if (cityBusy) "正在获取城市" else "获取当地城市") }
+                    }, modifier = Modifier.heightIn(min = UiSpacing.TouchTarget)) { Text(if (cityBusy) "正在获取城市" else "获取当地城市") }
                 }
+                if (settings.sessionCity.isNotBlank() && SessionTitle.normalizeCity(cityDraft) == settings.sessionCity)
+                    Text("城市已保存：${settings.sessionCity}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 cityStatus?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 if (locationDenied) Text("定位权限未开启，可手动填写城市。", style = MaterialTheme.typography.bodySmall)
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("演示模式", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-                    Switch(demo, modifier = Modifier.testTag("demo-mode").semantics { contentDescription = "演示模式" }, onCheckedChange = setDemo, enabled = !inputLocked && recording.phase !in listOf(RecordingPhase.RECORDING,
-                        RecordingPhase.PAUSED, RecordingPhase.STARTING, RecordingPhase.STOPPING))
-                }
+                SettingSwitch("演示模式", demo, enabled = !inputLocked && recording.phase !in listOf(RecordingPhase.RECORDING,
+                    RecordingPhase.PAUSED, RecordingPhase.STARTING, RecordingPhase.STOPPING), modifier = Modifier.testTag("demo-mode"), onChecked = setDemo)
+                if (inputLocked || recording.phase in listOf(RecordingPhase.RECORDING, RecordingPhase.PAUSED, RecordingPhase.STARTING, RecordingPhase.STOPPING))
+                    Text("停止当前会话后可切换演示模式", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 SectionLabel("隐私")
                 SettingSwitch("保留对话记录", settings.keepSessions) { update(SettingsChange(keepSessions = it)) }
                 Text("不保存原始音频", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 16.dp))
@@ -734,9 +768,10 @@ internal fun SettingsScreen(settings: UserSettings, recording: RecordingState, u
         } }, secondary = { dual -> Column(Modifier.fillMaxWidth().then(if (dual) Modifier.fillMaxHeight().verticalScroll(runtimeScroll) else Modifier)
             .padding(horizontal = UiSpacing.Page, vertical = 8.dp)) {
                 SectionLabel("性能模式")
-                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
                     PerformanceMode.entries.forEachIndexed { index, mode ->
                         SegmentedButton(settings.performanceMode == mode, { update(SettingsChange(performanceMode = mode)) },
+                            modifier = Modifier.fillMaxHeight(),
                             shape = SegmentedButtonDefaults.itemShape(index, PerformanceMode.entries.size, MaterialTheme.shapes.small), icon = {}) { Text(mode.label) }
                     }
                 }
@@ -806,6 +841,10 @@ internal fun RuntimeSettingsScreen(settings: UserSettings, recording: RecordingS
                 Text("诊断报告", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
                 ToolButton(Icons.Outlined.FileDownload, "导出运行诊断", hasDiagnostics) { diagnosticMenu = true }
             }
+            if (!hasDiagnostics) Text("暂无诊断报告；完成一次实际拾音后可导出。", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = UiSpacing.Panel))
+            Text("未采集或设备不提供的指标显示为不可用。", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
     } })
     if (diagnosticMenu) FoldAlertDialog(onDismissRequest = { diagnosticMenu = false }, title = { Text("导出运行诊断") },
         confirmButton = { TextButton(shape = MaterialTheme.shapes.small, onClick = { diagnosticMenu = false }) { Text("取消") } }, text = { Column {
@@ -824,15 +863,19 @@ internal fun RuntimeSettingsScreen(settings: UserSettings, recording: RecordingS
 @Composable
 private fun SectionLabel(text: String) {
     Text(text, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge,
-        modifier = Modifier.padding(top = 18.dp, bottom = 14.dp))
+        modifier = Modifier.padding(top = UiSpacing.Section, bottom = 12.dp))
 }
 @Composable
-private fun SettingSwitch(title: String, checked: Boolean, onChecked: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().toggleable(checked, role = Role.Switch, onValueChange = onChecked).padding(vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+private fun SettingSwitch(title: String, checked: Boolean, modifier: Modifier = Modifier,
+    enabled: Boolean = true, onChecked: (Boolean) -> Unit) {
+    Row(modifier.fillMaxWidth().heightIn(min = UiSpacing.TouchTarget)
+        .toggleable(checked, enabled = enabled, role = Role.Switch, onValueChange = onChecked)
+        .semantics { contentDescription = title }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f).padding(end = 12.dp)) {
-            Text(title, style = MaterialTheme.typography.titleSmall)
+            Text(title, style = MaterialTheme.typography.titleSmall,
+                color = if (enabled) LocalContentColor.current else MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Switch(checked, onCheckedChange = null)
+        Switch(checked, onCheckedChange = null, enabled = enabled)
     }
     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .5f))
 }

@@ -54,6 +54,164 @@ import java.io.File
 class ComposeUiTest {
     @get:Rule(order = 0) val windowLayout = WindowLayoutInfoPublisherRule()
     @get:Rule(order = 1) val compose = createAndroidComposeRule<ComponentActivity>()
+    @Test fun serifSwitchUpdatesRenderedTypographyInBothDirections() {
+        val settings = mutableStateOf(UserSettings())
+        compose.setContent { GlassTheme(settings.value) {
+            SettingsScreen(settings.value, RecordingState(), { settings.value = it.applyTo(settings.value) })
+        } }
+        fun assertPreviewFamily(expected: androidx.compose.ui.text.font.FontFamily) {
+            val layouts = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+            compose.onNodeWithText("字幕预览").performSemanticsAction(
+                androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult) { it(layouts) }
+            assertEquals(expected, layouts.single().layoutInput.style.fontFamily)
+        }
+        compose.onNodeWithText("衬线字体").assertIsOn()
+        assertPreviewFamily(androidx.compose.ui.text.font.FontFamily.Serif)
+        compose.onNodeWithText("衬线字体").performClick().assertIsOff()
+        assertPreviewFamily(androidx.compose.ui.text.font.FontFamily.SansSerif)
+        compose.onNodeWithText("衬线字体").performClick().assertIsOn()
+        assertPreviewFamily(androidx.compose.ui.text.font.FontFamily.Serif)
+    }
+    @Test @Config(qualifiers = "w320dp-h640dp-mdpi") fun auditSettingsCityAndDemoRemainReachableAtDoubleFont() {
+        val settings = mutableStateOf(UserSettings())
+        val locked = mutableStateOf(false)
+        val demo = mutableStateOf(false)
+        compose.setContent {
+            val density = LocalDensity.current
+            CompositionLocalProvider(LocalDensity provides Density(density.density, 2f)) {
+                GlassTheme(settings.value) {
+                    Box(Modifier.fillMaxSize()) {
+                        GlassBackdrop(Modifier.matchParentSize())
+                        SettingsScreen(settings.value, RecordingState(), { settings.value = it.applyTo(settings.value) },
+                            demo = demo.value, setDemo = { demo.value = it }, inputLocked = locked.value)
+                    }
+                }
+            }
+        }
+        compose.onNodeWithContentDescription("字幕字号").assertExists()
+        compose.onNodeWithText("跟随系统").performScrollTo()
+        val themeHeights = listOf("跟随系统", "浅色", "深色").map {
+            compose.onNodeWithText(it).fetchSemanticsNode().boundsInRoot.height
+        }
+        assertTrue("Theme segments must have equal heights at 200%", themeHeights.max() - themeHeights.min() <= 1f)
+        compose.onNodeWithText("保存城市").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithText("记录城市").performTextInput("上海")
+        compose.onNodeWithText("保存城市").performScrollTo().assertIsEnabled().performClick()
+        compose.onNodeWithText("城市已保存：上海").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("保存城市").assertIsNotEnabled()
+        snapshot("audit-city-font-200")
+        compose.onNodeWithTag("demo-mode").performScrollTo().performClick().assertIsOn()
+        compose.runOnIdle { assertTrue(demo.value); locked.value = true }
+        compose.onNodeWithTag("demo-mode").assertIsNotEnabled()
+        compose.onNodeWithText("停止当前会话后可切换演示模式").performScrollTo().assertIsDisplayed()
+        snapshot("audit-demo-locked-font-200")
+    }
+
+    @Test @Config(qualifiers = "w320dp-h640dp-mdpi") fun auditLongSessionTitleDoesNotHideActionsAndRenameRejectsBlank() {
+        val longTitle = "这是一个很长的会话名称".repeat(8).take(80)
+        var renamed: String? = null
+        val record = SavedSession("long-title", longTitle, 1_791_520_000_000, 18, false, CaptionJson.encode(captions))
+        compose.setContent {
+            val density = LocalDensity.current
+            CompositionLocalProvider(LocalDensity provides Density(density.density, 2f)) {
+                GlassTheme(UserSettings()) {
+                    Box(Modifier.fillMaxSize()) {
+                        GlassBackdrop(Modifier.matchParentSize())
+                        SessionsScreen(listOf(record), UserSettings(), { _, name -> renamed = name }, {}, { _, _, _ -> }, loadPage = ::fixturePage)
+                    }
+                }
+            }
+        }
+        compose.onNodeWithContentDescription("打开会话 $longTitle").performClick()
+        compose.onNodeWithContentDescription("重命名").assertIsDisplayed().performClick()
+        compose.onNodeWithText("名称").performTextClearance()
+        compose.onNodeWithText("请输入会话名称").assertExists()
+        compose.onNodeWithText("保存").assertIsNotEnabled()
+        snapshot("audit-rename-empty-font-200", includeDialog = true)
+        compose.onNodeWithText("名称").performTextInput("新名称")
+        compose.onNodeWithText("保存").performClick()
+        compose.runOnIdle { assertEquals("新名称", renamed) }
+        compose.onNodeWithContentDescription("导出").assertIsDisplayed()
+        snapshot("audit-long-title-font-200")
+    }
+
+    @Test fun auditSessionDeletionRequiresConfirmationAndCanBeCancelled() {
+        var deleted = false
+        val record = SavedSession("delete", savedTitle, 1_791_520_000_000, 18, true, "[]")
+        compose.setContent { GlassTheme(UserSettings()) {
+            SessionsScreen(listOf(record), UserSettings(), { _, _ -> }, { deleted = true }, { _, _, _ -> }, loadPage = ::fixturePage)
+        } }
+        compose.onNodeWithContentDescription("删除会话 $savedTitle").performClick()
+        compose.onNodeWithText("删除这段记录？").assertIsDisplayed()
+        snapshot("audit-session-delete", includeDialog = true)
+        compose.onNodeWithText("取消").performClick()
+        compose.runOnIdle { assertFalse(deleted) }
+        compose.onNodeWithContentDescription("删除会话 $savedTitle").performClick()
+        compose.onNodeWithText("删除").performClick()
+        compose.runOnIdle { assertTrue(deleted) }
+    }
+
+    @Test fun auditEmptyHistoryAndUnavailableDiagnosticsExplainNextStep() {
+        compose.setContent { GlassTheme(UserSettings()) {
+            SessionsScreen(emptyList(), UserSettings(), { _, _ -> }, {}, { _, _, _ -> }, loadPage = ::fixturePage)
+        } }
+        compose.onNodeWithText("开始拾音后，保留的对话会显示在这里。").assertIsDisplayed()
+        snapshot("audit-history-empty")
+    }
+
+    @Test fun auditUnavailableDiagnosticsExplainDisabledExport() {
+        compose.setContent { GlassTheme(UserSettings()) {
+            RuntimeSettingsScreen(UserSettings(), RecordingState(), ConversationState(), RuntimePerformance(), null, false,
+                { false }, { _, _ -> }, {})
+        } }
+        compose.onNodeWithContentDescription("导出运行诊断").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithText("暂无诊断报告；完成一次实际拾音后可导出。").performScrollTo().assertIsDisplayed()
+        snapshot("audit-diagnostics-unavailable")
+    }
+
+    @OptIn(ExperimentalTestApi::class)
+    @Test fun auditKeyboardCanActivateNavigationAndOpenLanguageMenu() {
+        val page = mutableStateOf(Page.LIVE)
+        val settings = mutableStateOf(UserSettings())
+        compose.setContent { GlassTheme(settings.value) {
+            val inputMode = androidx.compose.ui.platform.LocalInputModeManager.current
+            SideEffect { inputMode.requestInputMode(androidx.compose.ui.input.InputMode.Keyboard) }
+            Column {
+                GlassNavigation(page.value, false) { page.value = it }
+                LiveScreen(LiveState(), RecordingState(), settings.value, {}, {}, {}, {},
+                    changeMode = { settings.value = settings.value.copy(translationMode = it) })
+            }
+        } }
+        compose.onNodeWithTag("dock-sessions").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.RequestFocus)
+        compose.onNodeWithTag("dock-sessions").assertIsFocused()
+        compose.onNodeWithTag("dock-sessions").performKeyInput { pressKey(androidx.compose.ui.input.key.Key.Enter) }
+        compose.runOnIdle { assertEquals(Page.SESSIONS, page.value) }
+        compose.onNodeWithContentDescription("第一语言").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.RequestFocus)
+        compose.onNodeWithContentDescription("第一语言").performKeyInput { pressKey(androidx.compose.ui.input.key.Key.Enter) }
+        compose.onNodeWithTag("language-option-ko").assertIsDisplayed()
+        // Popup-window key dispatch is checked on Android; Robolectric does not route
+        // injected key events into the separately focused popup window reliably.
+    }
+
+    @Test fun auditTextColorsMeetContrastInBothThemes() {
+        val theme = mutableStateOf(ThemeMode.LIGHT)
+        var colors: androidx.compose.material3.ColorScheme? = null
+        compose.setContent { GlassTheme(UserSettings(theme = theme.value)) {
+            val current = androidx.compose.material3.MaterialTheme.colorScheme
+            SideEffect { colors = current }
+            androidx.compose.material3.Text("主题对比度检查")
+        } }
+        for (mode in listOf(ThemeMode.LIGHT, ThemeMode.DARK)) {
+            compose.runOnIdle { theme.value = mode }
+            compose.waitForIdle()
+            val c = requireNotNull(colors)
+            listOf(c.onSurface to c.background, c.onSurfaceVariant to c.background,
+                c.primary to c.surface, c.onPrimary to c.primary, c.onPrimaryContainer to c.primaryContainer,
+                c.error to c.surface, c.onErrorContainer to c.errorContainer).forEach { (text, background) ->
+                assertTrue("Enabled text contrast in $mode", textContrast(text, background) >= 4.5f)
+            }
+        }
+    }
     @Test fun missingModelDownloadAndCancellationAreReachableWithSmallProgressUnits() {
         val state = mutableStateOf(ModelState())
         var started = false; var cancelled = false
@@ -66,6 +224,7 @@ class ComposeUiTest {
             state.value = ModelState(busy = true, downloading = true, downloadedBytes = 1024, downloadTotalBytes = 643854)
         }
         compose.onNodeWithText("1 KiB / 628 KiB").assertExists()
+        snapshot("audit-model-download-progress")
         compose.onNodeWithText("取消下载").performClick()
         compose.runOnIdle { assertTrue(cancelled) }
         compose.onNodeWithTag("download-models").assertDoesNotExist()
@@ -180,6 +339,22 @@ class ComposeUiTest {
             }
         }
         compose.waitForIdle()
+        if (page == Page.LIVE) {
+            val panel = compose.onNodeWithTag("live-controls").fetchSemanticsNode().boundsInRoot
+            val action = compose.onNodeWithTag("live-primary-action").fetchSemanticsNode().boundsInRoot
+            val scale = compose.activity.resources.displayMetrics.density
+            val inset = UiSpacing.PanelInset.value * scale
+            assertEquals("Primary action right inset", inset, panel.right - action.right, 1f)
+            assertEquals("Primary action top inset", inset, action.top - panel.top, 1f)
+            assertEquals("Primary action bottom inset", inset, panel.bottom - action.bottom, 1f)
+            assertTrue("Primary action remains a 48 dp touch target", action.height >= 48f * scale)
+            val dock = compose.onNodeWithTag("app-dock").fetchSemanticsNode().boundsInRoot
+            if (dock.width > dock.height) {
+                assertEquals("Control and navigation left edges", dock.left, panel.left, 1f)
+                assertEquals("Control and navigation right edges", dock.right, panel.right, 1f)
+                assertEquals("Panel separation", UiSpacing.Panel.value * scale, dock.top - panel.bottom, 1f)
+            }
+        }
         snapshot(name)
     }
     private fun snapshot(name: String, includeDialog: Boolean = false) {
@@ -270,6 +445,12 @@ class ComposeUiTest {
         compose.onNodeWithText("版本：fixture-version").assertIsDisplayed()
         compose.onNodeWithText("许可：fixture-license").assertIsDisplayed()
         compose.onNodeWithText("https://example.org/model").assertIsDisplayed()
+        snapshot("audit-model-details", includeDialog = true)
+        compose.onNodeWithText("删除模型").performClick()
+        compose.onNodeWithText("删除模型？").assertIsDisplayed()
+        snapshot("audit-model-delete", includeDialog = true)
+        compose.onNodeWithText("取消").performClick()
+        compose.onNodeWithContentDescription("SenseVoice Small详情").performClick()
         compose.onNodeWithText("关闭").performClick()
         compose.onNodeWithText("https://example.org/model").assertDoesNotExist()
     }
@@ -280,6 +461,14 @@ class ComposeUiTest {
     @Test @Config(qualifiers = "w1280dp-h800dp-land-mdpi") fun renderTablet() = render("live-tablet")
     @Test fun renderLargeFont() = render("live-font-200", largeText = true)
     @Test fun renderModels() = render("models", Page.MODELS)
+    @Test fun auditRenderDarkModels() = render("audit-models-dark", Page.MODELS, dark = true)
+    @Test fun auditRenderDarkSettings() = render("audit-settings-dark", Page.SETTINGS, dark = true)
+    @Test fun auditRenderDarkSessions() = render("audit-sessions-dark", Page.SESSIONS, dark = true)
+    @Test @Config(qualifiers = "w320dp-h640dp-mdpi") fun auditRenderNarrowModelsAtDoubleFont() {
+        render("audit-models-font-200", Page.MODELS, largeText = true)
+        compose.onNodeWithText("从本地导入").performScrollTo().assertIsDisplayed().assertHeightIsAtLeast(48.dp)
+        snapshot("audit-models-font-200-scrolled")
+    }
     @Test fun renderSettings() = render("settings", Page.SETTINGS)
     @Test fun renderSessions() = render("sessions", Page.SESSIONS)
     @Test @Config(qualifiers = "w900dp-h900dp-mdpi") fun renderBookFold() {
@@ -445,6 +634,7 @@ class ComposeUiTest {
         compose.onNodeWithText("纯文本").assertIsDisplayed()
         compose.onNodeWithText("SRT 字幕").assertIsDisplayed()
         compose.onNodeWithText("JSON").assertIsDisplayed()
+        snapshot("audit-session-export", includeDialog = true)
     }
     @Test fun licenseAndSourceNoticesAreAvailableOffline() {
         render("settings-license-entry", Page.SETTINGS)
@@ -458,7 +648,9 @@ class ComposeUiTest {
             shadowOf(Looper.getMainLooper()).idle()
             compose.onAllNodes(hasText("github.com/ggml-org/llama.cpp", substring = true)).fetchSemanticsNodes().isNotEmpty()
         }
+        snapshot("audit-license-source", includeDialog = true)
         compose.onNodeWithText("返回").performClick()
+        snapshot("audit-license-list", includeDialog = true)
         compose.onNodeWithText("关闭").performClick()
     }
     @Test fun settingsReportsInstalledPackageVersion() {

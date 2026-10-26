@@ -26,6 +26,21 @@ import org.robolectric.annotation.LooperMode
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], application = TranslateApplication::class)
 class LocalDataTest {
+    @Test fun serifDefaultsOnAndPersistsWithoutChangingOtherSettings() = runBlocking {
+        val app = ApplicationProvider.getApplicationContext<TranslateApplication>()
+        assertTrue(UserSettings().serifFont)
+        assertTrue(app.settings.settings.first().serifFont)
+        app.settings.update(SettingsChange(keepSessions = false, theme = ThemeMode.DARK))
+        app.settings.update(SettingsChange(serifFont = false))
+        val restored = SettingsRepository(app).settings.first()
+        assertFalse(restored.serifFont)
+        assertFalse(restored.keepSessions)
+        assertEquals(ThemeMode.DARK, restored.theme)
+        app.settings.update(SettingsChange(fontSize = 22f))
+        assertFalse(app.settings.settings.first().serifFont)
+        app.settings.update(restored.copy(serifFont = true))
+        assertTrue(SettingsRepository(app).settings.first().serifFont)
+    }
     @Test fun fiveLanguagePreferencesAndCaptionLanguagesPersist() = runBlocking {
         val app = ApplicationProvider.getApplicationContext<TranslateApplication>()
         for (first in listOf(null) + SourceLanguage.supported) for (second in SourceLanguage.supported.filter { it != first }) {
