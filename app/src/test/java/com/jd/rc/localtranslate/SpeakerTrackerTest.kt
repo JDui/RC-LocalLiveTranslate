@@ -12,12 +12,13 @@ class SpeakerTrackerTest {
         val angle = Math.toRadians(degrees.toDouble())
         return floatArrayOf(cos(angle).toFloat(), sin(angle).toFloat())
     }
-    @Test fun firstEvidenceRemainsUnknownThenBackfills() {
+    @Test fun firstClearEvidenceLabelsEachVoiceWithoutWaitingForAnotherTurn() {
         val tracker = SpeakerTracker()
-        assertTrue(tracker.observe("one", floatArrayOf(1f, 0f), 2f).isEmpty())
+        assertEquals("A", tracker.observe("one", floatArrayOf(1f, 0f), .8f).single().speakerId)
         val assignments = tracker.observe("two", floatArrayOf(.99f, .01f), 2f)
-        assertEquals(listOf("one", "two"), assignments.map { it.segmentId })
+        assertEquals(listOf("two"), assignments.map { it.segmentId })
         assertTrue(assignments.all { it.speakerId == "A" })
+        assertEquals("B", tracker.observe("new-voice", floatArrayOf(0f, 1f), .8f).single().speakerId)
     }
     @Test fun aBAMatchesIndependentOfLanguageOrText() {
         val tracker = SpeakerTracker()
@@ -55,9 +56,9 @@ class SpeakerTrackerTest {
         assertTrue(tracker.observe("nan", voice(0), Float.NaN).isEmpty())
         assertTrue(tracker.observe("infinite", voice(0), Float.POSITIVE_INFINITY).isEmpty())
         assertTrue(tracker.observe("", voice(0), 2f).isEmpty())
+        assertEquals("A", tracker.observe("one", voice(0), 2f).single().speakerId)
         assertTrue(tracker.observe("one", voice(0), 2f).isEmpty())
-        assertTrue(tracker.observe("one", voice(0), 2f).isEmpty())
-        assertEquals(listOf("one", "two"), tracker.observe("two", voice(0), 2f).map { it.segmentId })
+        assertEquals(listOf("two"), tracker.observe("two", voice(0), 2f).map { it.segmentId })
     }
     @Test fun driftingClusterSplitsOnlyRetainedEvidenceAndKeepsOriginalAnchor() {
         val tracker = SpeakerTracker()
@@ -91,7 +92,7 @@ class SpeakerTrackerTest {
         assertEquals("B", merges.single().fromId)
         assertEquals("A", merges.single().intoId)
         assertEquals("A", tracker.observe("same-voice", voice(62), 2f).last().speakerId)
-        assertTrue(tracker.observe("novel-one", voice(180), 2f).isEmpty())
+        assertEquals("C", tracker.observe("novel-one", voice(180), 2f).single().speakerId)
         val next = tracker.observe("novel-two", voice(180), 2f).last()
         assertEquals("C", next.speakerId)
         assertTrue(next.revision > merges.single().revision)
@@ -123,7 +124,7 @@ class SpeakerTrackerTest {
         assertEquals(0, tracker.retainedEvidenceCount)
         assertEquals(0, tracker.allocatedSpeakerCount)
         assertTrue(tracker.drainMerges().isEmpty())
-        assertTrue(tracker.observe("fresh", voice(90), 2f).isEmpty())
+        assertEquals("A", tracker.observe("fresh", voice(90), 2f).single().speakerId)
         assertEquals("A", tracker.observe("fresh-two", voice(90), 2f).last().speakerId)
     }
 }

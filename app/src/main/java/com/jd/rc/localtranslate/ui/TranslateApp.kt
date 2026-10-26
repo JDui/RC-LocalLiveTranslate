@@ -13,6 +13,10 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
@@ -31,6 +35,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -72,6 +77,7 @@ fun TranslateApp(vm: AppViewModel) {
     val live by vm.live.collectAsStateWithLifecycle()
     val recording by vm.recording.collectAsStateWithLifecycle()
     val models by vm.models.collectAsStateWithLifecycle()
+    val cityState by vm.cityState.collectAsStateWithLifecycle()
     val notice by vm.notice.collectAsStateWithLifecycle()
     val processing by vm.conversation.collectAsStateWithLifecycle()
     val performance by vm.performance.collectAsStateWithLifecycle()
@@ -87,7 +93,7 @@ fun TranslateApp(vm: AppViewModel) {
         Box(Modifier.fillMaxSize()) {
             GlassBackdrop(Modifier.matchParentSize())
             FoldAppShell(folds, Modifier.fillMaxSize().safeDrawingPadding(), navigation = { rail ->
-                GlassNavigation(selected, rail, models.installed.size, models.busy) { page ->
+                GlassNavigation(selected, rail) { page ->
                     nav.navigate(page.name) { popUpTo(nav.graph.startDestinationId) { saveState = true }; launchSingleTop = true; restoreState = true }
                 }
             }) {
@@ -95,7 +101,6 @@ fun TranslateApp(vm: AppViewModel) {
                         composable(Page.LIVE.name) {
                             LiveScreen(live, recording, settings, vm::startDemo, vm::pauseDemo, vm::stopDemo, vm::record, processing, changeMode = { vm.setSettings(SettingsChange(translationMode = it)) }, modelBusy = models.busy)
                         }
-                        composable(Page.MODELS.name) { ModelsScreen(models, vm::importModel, vm::deleteModel, vm::downloadModels, vm::cancelModelDownload) }
                         composable(Page.SESSIONS.name) {
                             val sessions by vm.sessions.collectAsStateWithLifecycle()
                             val count by vm.sessionCount.collectAsStateWithLifecycle()
@@ -104,7 +109,10 @@ fun TranslateApp(vm: AppViewModel) {
                                 page, count, vm::changeSessionPage, vm::loadSessionPage)
                         }
                         composable(Page.SETTINGS.name) { SettingsScreen(settings, recording, vm::setSettings, processing, performance,
-                            processSample, diagnostics != null, vm::prepareDiagnosticExport, vm::exportDiagnostics, live.demo, vm::setDemo, live.running || live.paused) }
+                            processSample, diagnostics != null, vm::prepareDiagnosticExport, vm::exportDiagnostics, live.demo, vm::setDemo, live.running || live.paused,
+                            modelState = models, modelContent = { back -> ModelsScreen(models, vm::importModel, vm::deleteModel,
+                                vm::downloadModels, vm::cancelModelDownload, onBack = back) },
+                            cityBusy = cityState.busy, cityStatus = cityState.message, fetchCity = vm::fetchCity) }
                     }
                     FoldSafePage {
                         Box(Modifier.fillMaxSize()) { SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(16.dp)) }
@@ -115,39 +123,41 @@ fun TranslateApp(vm: AppViewModel) {
 }
 
 @Composable
-internal fun GlassNavigation(selected: Page, rail: Boolean, modelCount: Int = 0, modelBusy: Boolean = false, onSelect: (Page) -> Unit) {
+internal fun GlassNavigation(selected: Page, rail: Boolean, onSelect: (Page) -> Unit) {
     val colors = MaterialTheme.colorScheme
     val content: @Composable (Page, Modifier) -> Unit = { page, itemModifier ->
-        val active = selected == page
-        Column(itemModifier.widthIn(min = 48.dp).clip(MaterialTheme.shapes.small)
+        val active = selected == page || (selected == Page.MODELS && page == Page.SETTINGS)
+        Column(itemModifier.testTag("dock-${page.name.lowercase(Locale.ROOT)}").widthIn(min = 48.dp).clip(MaterialTheme.shapes.small)
             .background(if (active) colors.primaryContainer.copy(alpha = .85f) else Color.Transparent)
-            .semantics { if (page == Page.MODELS) stateDescription = if (modelBusy) "正在安装模型" else "$modelCount/${modelSlots.size} 个模型已安装" }
             .selectable(active, role = Role.Tab, onClick = { onSelect(page) }).heightIn(min = 48.dp).padding(horizontal = 6.dp, vertical = 6.dp),
             horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(page.icon, page.title, tint = if (active) colors.primary else colors.onSurfaceVariant, modifier = Modifier.size(24.dp))
-            Text(if (LocalDensity.current.fontScale > 1.5f) when (page) { Page.LIVE -> "字幕"; Page.MODELS -> "模型"; Page.SESSIONS -> "记录"; Page.SETTINGS -> "设置" } else if (page == Page.MODELS && !rail) "模型 ${if (modelBusy) "安装中" else "$modelCount/${modelSlots.size}"}" else page.title,
+            Text(if (LocalDensity.current.fontScale > 1.5f) when (page) { Page.LIVE -> "字幕"; Page.MODELS -> "模型"; Page.SESSIONS -> "记录"; Page.SETTINGS -> "设置" } else page.title,
                 maxLines = 1,
                 fontSize = 11.sp, color = if (active) colors.primary else colors.onSurfaceVariant,
                 fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal, modifier = Modifier.padding(top = 2.dp))
-            if (page == Page.MODELS && rail) Text(if (modelBusy) "安装中" else "$modelCount/${modelSlots.size} 已安装",
-                fontSize = 9.sp, color = colors.onSurfaceVariant, modifier = Modifier.testTag("navigation-model-status"))
         }
     }
-    if (rail) GlassSurface(Modifier.padding(UiSpacing.Panel).width(80.dp).fillMaxHeight()) {
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(4.dp), horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Page.entries.forEach { content(it, Modifier.fillMaxWidth()) }
+    if (rail) GlassSurface(Modifier.padding(UiSpacing.Panel).width(80.dp).fillMaxHeight().testTag("app-dock")) {
+        Column(Modifier.fillMaxSize().padding(4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(Page.LIVE, Page.SESSIONS).forEach { content(it, Modifier.fillMaxWidth()) }
+            }
+            Spacer(Modifier.height(8.dp))
+            content(Page.SETTINGS, Modifier.fillMaxWidth())
         }
-    } else GlassSurface(Modifier.padding(start = UiSpacing.Panel, end = UiSpacing.Panel, bottom = UiSpacing.Panel).fillMaxWidth()) {
+    } else GlassSurface(Modifier.padding(start = UiSpacing.Panel, end = UiSpacing.Panel, bottom = UiSpacing.Panel).fillMaxWidth().testTag("app-dock")) {
         Row(Modifier.fillMaxWidth().padding(4.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
-            Page.entries.forEach { content(it, Modifier.weight(1f)) }
+            Page.entries.filter { it != Page.MODELS }.forEach { content(it, Modifier.weight(1f)) }
         }
     }
 }
 
 @Composable
-private fun PageHeader(page: Page, trailing: @Composable () -> Unit = {}) {
+private fun PageHeader(page: Page, onBack: (() -> Unit)? = null, trailing: @Composable () -> Unit = {}) {
     Row(Modifier.fillMaxWidth().padding(horizontal = UiSpacing.Page, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        onBack?.let { ToolButton(Icons.AutoMirrored.Outlined.ArrowBack, "返回设置", onClick = it) }
         Column(Modifier.weight(1f)) {
             Text(page.title, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
         }
@@ -194,11 +204,11 @@ internal fun LiveScreen(live: LiveState, recording: RecordingState, settings: Us
         Row(Modifier.fillMaxWidth().padding(horizontal = UiSpacing.Panel).testTag("live-toolbar"), verticalAlignment = Alignment.CenterVertically) {
             val mode = settings.translationMode
             val canChange = !active && !paused && !starting
-            LanguageSelector(mode.first, listOf(null) + SourceLanguage.supported, "第一语言", canChange,
+            LanguageSelector(mode.first, listOf(null) + SourceLanguage.supported.filter { it != mode.second }, "第一语言", canChange,
                 Modifier.weight(1f).testTag("first-language")) { changeMode(mode.withFirst(it)) }
             Icon(if (mode.first == null) Icons.AutoMirrored.Outlined.ArrowForward else Icons.Outlined.SwapHoriz,
                 if (mode.first == null) "自动识别后翻译" else "双向互译", modifier = Modifier.size(20.dp))
-            LanguageSelector(mode.second, SourceLanguage.supported, "第二语言", canChange,
+            LanguageSelector(mode.second, SourceLanguage.supported.filter { it != mode.first }, "第二语言", canChange,
                 Modifier.weight(1f).testTag("second-language")) { changeMode(mode.withSecond(requireNotNull(it))) }
             if (live.demo) Text("演示数据", color = MaterialTheme.colorScheme.primary,
                 style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(start = 8.dp))
@@ -296,7 +306,7 @@ private fun LanguageSelector(value: SourceLanguage?, options: List<SourceLanguag
         TextButton(shape = MaterialTheme.shapes.small, onClick = { open = true }, enabled = enabled,
             contentPadding = PaddingValues(horizontal = UiSpacing.Panel),
             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).semantics { contentDescription = label }) {
-            Text(value?.label ?: "自动识别", fontSize = 14.sp, modifier = Modifier.weight(1f))
+            Text(value?.label ?: "自动识别", fontSize = 14.sp, modifier = Modifier.padding(end = 4.dp))
             Icon(Icons.Outlined.ArrowDropDown, null)
         }
         DropdownMenu(expanded = open && enabled, onDismissRequest = { open = false }, shape = MaterialTheme.shapes.large) {
@@ -329,7 +339,7 @@ private fun TranslationCompanion(item: SubtitleItem?, settings: UserSettings, mo
                 item.stage == CaptionStage.PARTIAL -> "识别中"
                 else -> "翻译中"
             }
-            Text(text, fontSize = settings.fontSize.sp, lineHeight = (settings.fontSize * 1.35f).sp,
+            Text(text, color = readableSpeakerColor(MaterialTheme.colorScheme.onSurface, item.speakerId, MaterialTheme.colorScheme.background, MaterialTheme.colorScheme.surface), fontSize = settings.fontSize.sp, lineHeight = (settings.fontSize * 1.35f).sp,
                 modifier = Modifier.padding(top = 16.dp))
         }
     }
@@ -353,11 +363,13 @@ private fun WaveMeter(level: Float, modifier: Modifier) {
 @Composable
 internal fun CaptionRow(item: SubtitleItem, settings: UserSettings) {
     val colors = MaterialTheme.colorScheme
-    val speakerColor = if (item.speakerId == "B") colors.secondary else colors.primary
+    val badgeBackground = speakerAccent(item.speakerId)?.copy(alpha = .12f)?.compositeOver(colors.background) ?: colors.surface
+    val speakerColor = readableSpeakerColor(colors.onSurface, item.speakerId, colors.background, colors.surface,
+        extraBackground = badgeBackground, tint = 1f)
     val avatarSize = with(LocalDensity.current) { (12.sp.toDp() + 10.dp).coerceAtLeast(22.dp) }
     Column(Modifier.fillMaxWidth().padding(vertical = 6.dp).semantics(mergeDescendants = true) {}) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(avatarSize).background(speakerColor.copy(alpha = .12f), MaterialTheme.shapes.extraSmall), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(avatarSize).background(badgeBackground, MaterialTheme.shapes.extraSmall), contentAlignment = Alignment.Center) {
                 Text(item.speakerId ?: "?", fontSize = 12.sp, color = speakerColor, fontWeight = FontWeight.Bold)
             }
             Text(item.speakerId?.let { "Speaker $it" } ?: "未知说话人", color = speakerColor, fontSize = 12.sp,
@@ -367,9 +379,9 @@ internal fun CaptionRow(item: SubtitleItem, settings: UserSettings) {
         }
         val translated = item.targetText.isNotBlank()
         if (settings.bilingual || !translated) Text(item.sourceText, fontSize = if (translated) (settings.fontSize - 2).coerceAtLeast(8f).sp else settings.fontSize.sp,
-            color = if (translated) colors.onSurfaceVariant else colors.onSurface,
+            color = readableSpeakerColor(if (translated) colors.onSurfaceVariant else colors.onSurface, item.speakerId, colors.background, colors.surface),
             lineHeight = (settings.fontSize * 1.3f).sp, modifier = Modifier.padding(top = 4.dp))
-        if (translated) Text(item.targetText, fontSize = settings.fontSize.sp, lineHeight = (settings.fontSize * 1.35f).sp,
+        if (translated) Text(item.targetText, color = readableSpeakerColor(colors.onSurface, item.speakerId, colors.background, colors.surface), fontSize = settings.fontSize.sp, lineHeight = (settings.fontSize * 1.35f).sp,
             fontWeight = FontWeight.Medium, modifier = Modifier.padding(top = 3.dp))
         if (item.stage != CaptionStage.FINAL || item.translationStatus in setOf(TranslationStatus.WAITING, TranslationStatus.UNAVAILABLE)) Text(when {
             item.stage == CaptionStage.FINAL && item.translationStatus == TranslationStatus.WAITING -> "翻译中"
@@ -383,13 +395,13 @@ internal fun CaptionRow(item: SubtitleItem, settings: UserSettings) {
 
 @Composable
 internal fun ModelsScreen(state: ModelState, import: (Uri) -> Unit, delete: (String) -> Unit,
-    download: () -> Unit = {}, cancelDownload: () -> Unit = {}) {
+    download: () -> Unit = {}, cancelDownload: () -> Unit = {}, onBack: (() -> Unit)? = null) {
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { it?.let(import) }
     var deleting by remember { mutableStateOf<ModelSlot?>(null) }
     val speechScroll = rememberScrollState()
     val translationScroll = rememberScrollState()
     FoldContentLayout(primary = { dual -> Column(Modifier.fillMaxWidth().then(if (dual) Modifier.fillMaxHeight().verticalScroll(speechScroll) else Modifier)) {
-        PageHeader(Page.MODELS) { ToolButton(Icons.Outlined.FileUpload, "导入模型包", !state.busy && !state.inUse) { picker.launch(arrayOf("application/zip", "application/octet-stream")) } }
+        PageHeader(Page.MODELS, onBack) { ToolButton(Icons.Outlined.FileUpload, "导入模型包", !state.busy && !state.inUse) { picker.launch(arrayOf("application/zip", "application/octet-stream")) } }
         Column(Modifier.padding(horizontal = UiSpacing.Page, vertical = 8.dp)) {
                 Text("${state.installed.size} / ${modelSlots.size} 已安装", fontSize = 24.sp, fontWeight = FontWeight.Medium)
                 if (state.inUse) Text("会话正在使用模型", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
@@ -512,7 +524,9 @@ internal fun SessionsScreen(sessions: List<SavedSession>, settings: UserSettings
                 contentPadding = PaddingValues(horizontal = UiSpacing.Page, vertical = 8.dp)) {
                 items(sessions, key = { it.id }) { session ->
                     val active = session.id == (chosen?.id ?: if (dual) sessions.firstOrNull()?.id else null)
-                    Row(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small)
+                    SwipeDeleteSession(session, onDelete = {
+                        delete(session.id); if (selectedId == session.id) selectedId = null
+                    }) { Row(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small)
                         .background(if (active) MaterialTheme.colorScheme.primaryContainer.copy(alpha = .45f) else Color.Transparent)
                         .clickable { selectedId = session.id }.semantics { contentDescription = "打开会话 ${SessionTitle.display(session)}"; selected = active }
                         .padding(vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -525,7 +539,7 @@ internal fun SessionsScreen(sessions: List<SavedSession>, settings: UserSettings
                                 modifier = Modifier.padding(top = 4.dp))
                         }
                         ToolButton(Icons.Outlined.DeleteOutline, "删除会话 ${SessionTitle.display(session)}") { deleting = session }
-                    }
+                    } }
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .5f))
                 }
             }
@@ -592,6 +606,46 @@ internal fun SessionsScreen(sessions: List<SavedSession>, settings: UserSettings
         dismissButton = { TextButton(shape = MaterialTheme.shapes.small, onClick = { deleting = null }) { Text("取消") } }) }
 }
 
+@Composable
+internal fun SwipeDeleteSession(session: SavedSession, onDelete: () -> Unit, content: @Composable () -> Unit) {
+    var revealed by rememberSaveable(session.id) { mutableStateOf(false) }
+    var drag by remember(session.id) { mutableFloatStateOf(0f) }
+    val width = with(LocalDensity.current) { 104.dp.toPx() }
+    val threshold = with(LocalDensity.current) { 56.dp.toPx() }
+    val latestDelete by rememberUpdatedState(onDelete)
+    Box(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).testTag("swipe-session-${session.id}")
+        .semantics {
+            stateDescription = if (revealed) "删除已展开，再向左滑动删除" else "向左滑动显示删除"
+            customActions = listOf(CustomAccessibilityAction(if (revealed) "删除记录" else "显示删除") {
+                if (revealed) latestDelete() else revealed = true
+                true
+            })
+        }
+        .pointerInput(session.id, revealed, width, threshold) {
+            detectHorizontalDragGestures(onDragStart = { drag = 0f }, onDragCancel = { drag = 0f },
+                onHorizontalDrag = { change, amount -> change.consume(); drag += amount },
+                onDragEnd = {
+                    val amount = drag; drag = 0f
+                    if (amount <= -threshold) {
+                        if (revealed) latestDelete() else revealed = true
+                    } else if (amount >= threshold) revealed = false
+                })
+        }) {
+        if (revealed || drag < 0) Box(Modifier.matchParentSize().background(MaterialTheme.colorScheme.errorContainer), contentAlignment = Alignment.CenterEnd) {
+            TextButton(onClick = { latestDelete() }, modifier = Modifier.width(104.dp).fillMaxHeight(),
+                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onErrorContainer)) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Outlined.DeleteOutline, null)
+                    Text("删除")
+                    Text("再滑一次", fontSize = 10.sp)
+                }
+            }
+        }
+        Box(Modifier.fillMaxWidth().offset { IntOffset(((if (revealed) -width else 0f) + drag).coerceIn(-2 * width, 0f).roundToInt(), 0) }
+            .background(MaterialTheme.colorScheme.background)) { content() }
+    }
+}
+
 private data class SessionDetailLoad(val page: SessionCaptionPage? = null, val loading: Boolean = true, val failed: Boolean = false)
 
 @Composable
@@ -607,62 +661,126 @@ private fun RecordPager(page: Int, hasMore: Boolean, label: String, change: (Int
 internal fun SettingsScreen(settings: UserSettings, recording: RecordingState, update: (SettingsChange) -> Unit,
     processing: ConversationState = ConversationState(), runtime: RuntimePerformance = RuntimePerformance(),
     processSample: ProcessSample? = null, hasDiagnostics: Boolean = false, prepareDiagnosticExport: () -> Boolean = { false },
-    exportDiagnostics: (Uri, String) -> Unit = { _, _ -> }, demo: Boolean = false, setDemo: (Boolean) -> Unit = {}, inputLocked: Boolean = false) {
+    exportDiagnostics: (Uri, String) -> Unit = { _, _ -> }, demo: Boolean = false, setDemo: (Boolean) -> Unit = {}, inputLocked: Boolean = false,
+    modelState: ModelState = ModelState(),
+    modelContent: @Composable (() -> Unit) -> Unit = { back -> ModelsScreen(ModelState(), {}, {}, onBack = back) },
+    cityBusy: Boolean = false, cityStatus: String? = null, fetchCity: () -> Unit = {}) {
     val context = LocalContext.current
     val version = remember(context) { context.packageManager.getPackageInfo(context.packageName, 0).versionName.orEmpty() }
     var licenses by remember { mutableStateOf(false) }
+    var section by rememberSaveable { mutableStateOf("home") }
+    val homeState = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
+    BackHandler(enabled = section != "home") { section = "home" }
+    if (section == "models") { modelContent { section = "home" }; return }
+    if (section == "runtime") {
+        RuntimeSettingsScreen(settings, recording, processing, runtime, processSample, hasDiagnostics,
+            prepareDiagnosticExport, exportDiagnostics) { section = "home" }
+        return
+    }
+    homeState.SaveableStateProvider("settings-home") {
+        val displayScroll = rememberScrollState()
+        val runtimeScroll = rememberScrollState()
+        FoldContentLayout(primary = { dual -> Column(Modifier.fillMaxWidth().then(if (dual) Modifier.fillMaxHeight().verticalScroll(displayScroll) else Modifier)) {
+            PageHeader(Page.SETTINGS)
+            SettingsEntry("离线模型", if (modelState.busy) "正在安装模型" else "${modelState.installed.size}/${modelSlots.size} 已安装",
+                Icons.Outlined.Memory) { section = "models" }
+            Column(Modifier.padding(horizontal = UiSpacing.Page, vertical = 8.dp)) {
+                SectionLabel("显示")
+                SettingSwitch("双语字幕", settings.bilingual) { update(SettingsChange(bilingual = it)) }
+                Text("字幕字号", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 18.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Slider(settings.fontSize, { update(SettingsChange(fontSize = it)) }, valueRange = 8f..24f, steps = 15, modifier = Modifier.weight(1f))
+                    Text("${settings.fontSize.toInt()}", modifier = Modifier.padding(start = 16.dp))
+                }
+                Text("字幕预览", fontSize = settings.fontSize.sp, modifier = Modifier.padding(vertical = 14.dp))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .5f))
+                Text("外观", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 20.dp, bottom = 12.dp))
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                    ThemeMode.entries.forEachIndexed { index, theme ->
+                        SegmentedButton(settings.theme == theme, { update(SettingsChange(theme = theme)) },
+                            shape = SegmentedButtonDefaults.itemShape(index, 3, MaterialTheme.shapes.small), icon = {}) { Text(theme.label, fontSize = 12.sp) }
+                    }
+                }
+                SettingSwitch("降低透明度", settings.reduceTransparency) { update(SettingsChange(reduceTransparency = it)) }
+                var cityDraft by rememberSaveable(settings.sessionCity) { mutableStateOf(settings.sessionCity) }
+                OutlinedTextField(cityDraft, { cityDraft = it.take(32) }, label = { Text("记录城市") }, singleLine = true, enabled = !cityBusy,
+                    shape = MaterialTheme.shapes.small,
+                    placeholder = { Text("未设置") }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    supportingText = { Text("用于新记录名称；系统城市查询可能联网") })
+                var locationDenied by rememberSaveable { mutableStateOf(false) }
+                val locationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+                    locationDenied = !granted
+                    if (granted) fetchCity()
+                }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(enabled = !cityBusy, onClick = { update(SettingsChange(sessionCity = cityDraft)) }) { Text("保存城市") }
+                    TextButton(enabled = !cityBusy, onClick = {
+                        locationDenied = false
+                        if (context.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED) fetchCity()
+                        else locationPermission.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
+                    }) { Text(if (cityBusy) "正在获取城市" else "获取当地城市") }
+                }
+                cityStatus?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                if (locationDenied) Text("定位权限未开启，可手动填写城市。", style = MaterialTheme.typography.bodySmall)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("演示模式", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                    Switch(demo, modifier = Modifier.testTag("demo-mode").semantics { contentDescription = "演示模式" }, onCheckedChange = setDemo, enabled = !inputLocked && recording.phase !in listOf(RecordingPhase.RECORDING,
+                        RecordingPhase.PAUSED, RecordingPhase.STARTING, RecordingPhase.STOPPING))
+                }
+                SectionLabel("隐私")
+                SettingSwitch("保留对话记录", settings.keepSessions) { update(SettingsChange(keepSessions = it)) }
+                Text("不保存原始音频", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 16.dp))
+            }
+        } }, secondary = { dual -> Column(Modifier.fillMaxWidth().then(if (dual) Modifier.fillMaxHeight().verticalScroll(runtimeScroll) else Modifier)
+            .padding(horizontal = UiSpacing.Page, vertical = 8.dp)) {
+                SectionLabel("性能模式")
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                    PerformanceMode.entries.forEachIndexed { index, mode ->
+                        SegmentedButton(settings.performanceMode == mode, { update(SettingsChange(performanceMode = mode)) },
+                            shape = SegmentedButtonDefaults.itemShape(index, PerformanceMode.entries.size, MaterialTheme.shapes.small), icon = {}) { Text(mode.label) }
+                    }
+                }
+                Text("自动模式允许翻译使用更多 CPU 资源；省电或温度较高时降低占用。", style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(top = 8.dp))
+                SettingsEntry("运行与诊断", "当前运行状态与诊断报告", Icons.Outlined.QueryStats, contentPadding = PaddingValues(vertical = 12.dp)) { section = "runtime" }
+                SectionLabel(stringResource(R.string.app_name))
+                TextButton(shape = MaterialTheme.shapes.small, onClick = { licenses = true }) { Text("开源许可") }
+                Text(version, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 24.dp))
+        } })
+        if (licenses) LicenseDialog { licenses = false }
+    }
+}
+
+@Composable
+private fun SettingsEntry(title: String, summary: String, icon: ImageVector,
+    contentPadding: PaddingValues = PaddingValues(horizontal = UiSpacing.Page, vertical = 12.dp), onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).heightIn(min = 64.dp)
+        .padding(contentPadding).semantics(mergeDescendants = true) { contentDescription = title },
+        verticalAlignment = Alignment.CenterVertically) {
+        Icon(icon, null, tint = MaterialTheme.colorScheme.primary)
+        Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+            Text(title, style = MaterialTheme.typography.titleSmall)
+            Text(summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null)
+    }
+}
+
+@Composable
+internal fun RuntimeSettingsScreen(settings: UserSettings, recording: RecordingState, processing: ConversationState,
+    runtime: RuntimePerformance, processSample: ProcessSample?, hasDiagnostics: Boolean,
+    prepareDiagnosticExport: () -> Boolean, exportDiagnostics: (Uri, String) -> Unit, onBack: () -> Unit) {
     var diagnosticMenu by remember { mutableStateOf(false) }
     val json = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri -> uri?.let { exportDiagnostics(it, "json") } }
     val csv = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri -> uri?.let { exportDiagnostics(it, "csv") } }
-    val displayScroll = rememberScrollState()
-    val runtimeScroll = rememberScrollState()
-    FoldContentLayout(primary = { dual -> Column(Modifier.fillMaxWidth().then(if (dual) Modifier.fillMaxHeight().verticalScroll(displayScroll) else Modifier)) {
-        PageHeader(Page.SETTINGS)
-        Column(Modifier.padding(horizontal = UiSpacing.Page, vertical = 8.dp)) {
-            SectionLabel("显示")
-            SettingSwitch("双语字幕", settings.bilingual) { update(SettingsChange(bilingual = it)) }
-            Text("字幕字号", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 18.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Slider(settings.fontSize, { update(SettingsChange(fontSize = it)) }, valueRange = 8f..24f, steps = 15, modifier = Modifier.weight(1f))
-                Text("${settings.fontSize.toInt()}", modifier = Modifier.padding(start = 16.dp))
-            }
-            Text("字幕预览", fontSize = settings.fontSize.sp, modifier = Modifier.padding(vertical = 14.dp))
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .5f))
-            Text("外观", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 20.dp, bottom = 12.dp))
-            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                ThemeMode.entries.forEachIndexed { index, theme ->
-                    SegmentedButton(settings.theme == theme, { update(SettingsChange(theme = theme)) },
-                        shape = SegmentedButtonDefaults.itemShape(index, 3, MaterialTheme.shapes.small), icon = {}) { Text(theme.label, fontSize = 12.sp) }
-                }
-            }
-            SettingSwitch("降低透明度", settings.reduceTransparency) { update(SettingsChange(reduceTransparency = it)) }
-            var cityDraft by rememberSaveable(settings.sessionCity) { mutableStateOf(settings.sessionCity) }
-            OutlinedTextField(cityDraft, { cityDraft = it.take(32) }, label = { Text("记录城市") }, singleLine = true,
-                shape = MaterialTheme.shapes.small,
-                placeholder = { Text("未设置") }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                supportingText = { Text("用于新记录名称，按开始时间保存") })
-            TextButton(shape = MaterialTheme.shapes.small, onClick = { update(SettingsChange(sessionCity = cityDraft)) }) { Text("保存城市") }
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("演示模式", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-                Switch(demo, modifier = Modifier.testTag("demo-mode").semantics { contentDescription = "演示模式" }, onCheckedChange = setDemo, enabled = !inputLocked && recording.phase !in listOf(RecordingPhase.RECORDING,
-                    RecordingPhase.PAUSED, RecordingPhase.STARTING, RecordingPhase.STOPPING))
-            }
-            SectionLabel("隐私")
-            SettingSwitch("保留对话记录", settings.keepSessions) { update(SettingsChange(keepSessions = it)) }
-            Text("不保存原始音频", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 16.dp))
+    val firstScroll = rememberScrollState()
+    val secondScroll = rememberScrollState()
+    FoldContentLayout(primary = { dual -> Column(Modifier.fillMaxWidth().then(if (dual) Modifier.fillMaxHeight().verticalScroll(firstScroll) else Modifier)) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = UiSpacing.Panel, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            ToolButton(Icons.AutoMirrored.Outlined.ArrowBack, "返回设置", onClick = onBack)
+            Text("运行与诊断", style = MaterialTheme.typography.headlineSmall)
         }
-    } }, secondary = { dual -> Column(Modifier.fillMaxWidth().then(if (dual) Modifier.fillMaxHeight().verticalScroll(runtimeScroll) else Modifier)
-        .padding(horizontal = UiSpacing.Page, vertical = 8.dp)) {
-            SectionLabel("性能模式")
-            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                PerformanceMode.entries.forEachIndexed { index, mode ->
-                    SegmentedButton(settings.performanceMode == mode, { update(SettingsChange(performanceMode = mode)) },
-                        shape = SegmentedButtonDefaults.itemShape(index, PerformanceMode.entries.size, MaterialTheme.shapes.small), icon = {}) { Text(mode.label) }
-                }
-            }
-            Text("自动模式允许翻译使用更多 CPU 资源；省电或温度较高时降低占用。", style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(top = 8.dp))
-            SectionLabel("当前运行")
+        Column(Modifier.padding(horizontal = UiSpacing.Page)) {
             DiagnosticRow("压力监测", if (runtime.active) "运行中" else "未监测")
             DiagnosticRow("热状态", when (runtime.snapshot.thermalStatus) { 0 -> "正常"; 1 -> "轻度"; 2 -> "中度"; 3 -> "严重"; 4 -> "临界"; 5 -> "紧急"; 6 -> "需关机"; else -> "不可用" })
             DiagnosticRow("系统可用内存", runtime.snapshot.availableBytes?.let { "${it / 1024 / 1024} MiB" } ?: "不可用")
@@ -671,6 +789,9 @@ internal fun SettingsScreen(settings: UserSettings, recording: RecordingState, u
             DiagnosticRow("最近进程 RSS", processSample?.rssBytes?.let { "${it / 1024 / 1024} MiB" } ?: "不可用")
             DiagnosticRow("暂停声纹语段", processing.skippedSpeakerSegments.toString())
             DiagnosticRow("未翻译语段", processing.deferredTranslations.toString())
+        }
+    } }, secondary = { dual -> Column(Modifier.fillMaxWidth().then(if (dual) Modifier.fillMaxHeight().verticalScroll(secondScroll) else Modifier)
+        .padding(horizontal = UiSpacing.Page, vertical = 8.dp)) {
             DiagnosticRow("推理引擎", "sherpa 1.13.8 / Hy-MT2 STQ")
             DiagnosticRow("采样格式", "16 kHz · 单声道 PCM16")
             DiagnosticRow("输入格式", if (recording.inputSampleRate > 0) "${recording.inputSampleRate} Hz · PCM16" else "未采集")
@@ -682,14 +803,10 @@ internal fun SettingsScreen(settings: UserSettings, recording: RecordingState, u
             DiagnosticRow("最近识别耗时", "${processing.asrMillis} ms")
             DiagnosticRow("翻译语言", settings.translationMode.label)
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("运行诊断", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                Text("诊断报告", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
                 ToolButton(Icons.Outlined.FileDownload, "导出运行诊断", hasDiagnostics) { diagnosticMenu = true }
             }
-            SectionLabel(stringResource(R.string.app_name))
-            TextButton(shape = MaterialTheme.shapes.small, onClick = { licenses = true }) { Text("开源许可") }
-            Text(version, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 24.dp))
     } })
-    if (licenses) LicenseDialog { licenses = false }
     if (diagnosticMenu) FoldAlertDialog(onDismissRequest = { diagnosticMenu = false }, title = { Text("导出运行诊断") },
         confirmButton = { TextButton(shape = MaterialTheme.shapes.small, onClick = { diagnosticMenu = false }) { Text("取消") } }, text = { Column {
             listOf("json" to "JSON", "csv" to "CSV").forEach { (format, label) ->

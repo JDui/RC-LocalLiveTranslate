@@ -45,6 +45,26 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }.stateIn(viewModelScope, SharingStarted.Eagerly, LiveState())
     private val mutableNotice = MutableStateFlow<String?>(null)
     val notice = mutableNotice.asStateFlow()
+    private val mutableCityState = MutableStateFlow(CityLookupState())
+    val cityState = mutableCityState.asStateFlow()
+    private var cityJob: Job? = null
+    fun fetchCity() {
+        if (cityJob?.isActive == true) return
+        cityJob = viewModelScope.launch {
+            mutableCityState.value = CityLookupState(busy = true)
+            val previousCity = settings.value.sessionCity
+            try {
+                val city = DeviceCityResolver(app).resolve()
+                if (city != null && app.settings.updateCityIfUnchanged(previousCity, city)) {
+                    mutableCityState.value = CityLookupState(message = "已获取当地城市：$city")
+                } else mutableCityState.value = CityLookupState(message = if (city == null) "未能获取城市，请检查定位或手动填写。" else "城市已手动修改，保留当前设置。")
+            } catch (cancelled: CancellationException) {
+                mutableCityState.value = CityLookupState(); throw cancelled
+            } catch (_: Exception) {
+                mutableCityState.value = CityLookupState(message = "未能获取城市，可手动填写。")
+            }
+        }
+    }
     private var demoJob: Job? = null
     private var modelDownloadJob: Job? = null
     private var reducer = SubtitleReducer("")

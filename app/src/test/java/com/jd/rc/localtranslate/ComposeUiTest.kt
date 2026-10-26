@@ -88,9 +88,12 @@ class ComposeUiTest {
         compose.runOnIdle { assertEquals(TranslationMode(SourceLanguage.KO, SourceLanguage.YUE), settings.value.translationMode) }
         snapshot("five-language-selectors")
         compose.onNodeWithContentDescription("第一语言").performClick()
-        compose.onNodeWithTag("language-option-yue").performClick()
-        compose.onNodeWithContentDescription("第一语言").assertTextContains("粤语")
-        compose.onNodeWithContentDescription("第二语言").assertTextContains("韩语")
+        compose.onNodeWithTag("language-option-yue").assertDoesNotExist()
+        compose.onNodeWithTag("language-option-en").performClick()
+        compose.onNodeWithContentDescription("第一语言").assertTextContains("English")
+        compose.onNodeWithContentDescription("第二语言").performClick()
+        compose.onNodeWithTag("language-option-en").assertDoesNotExist()
+        compose.onNodeWithTag("language-option-ko").performClick()
     }
 
     @Test fun bothLanguageSelectorsStayLockedThroughoutSessionAndUnlockAfterStop() {
@@ -135,7 +138,7 @@ class ComposeUiTest {
             }
         }
         compose.onNodeWithContentDescription("第一语言").assertIsDisplayed().assertHeightIsAtLeast(48.dp).performClick()
-        for (language in SourceLanguage.supported) compose.onNodeWithTag("language-option-${language.code}").assertIsDisplayed()
+        for (language in SourceLanguage.supported.filter { it != SourceLanguage.ZH }) compose.onNodeWithTag("language-option-${language.code}").assertIsDisplayed()
         compose.onNodeWithTag("language-option-ko").performClick()
         compose.onNodeWithContentDescription("第二语言").assertIsDisplayed().assertHeightIsAtLeast(48.dp).performClick()
         compose.onNodeWithTag("language-option-yue").performClick()
@@ -238,7 +241,7 @@ class ComposeUiTest {
     @Test @Config(qualifiers = "w360dp-h640dp-mdpi") fun compactLiveKeepsMostHeightForSubtitles() {
         compose.setContent {
             GlassTheme(UserSettings()) {
-                FoldAppShell(emptyList(), Modifier.fillMaxSize(), navigation = { GlassNavigation(Page.LIVE, it, 4) {} }) {
+                FoldAppShell(emptyList(), Modifier.fillMaxSize(), navigation = { GlassNavigation(Page.LIVE, it) {} }) {
                     LiveScreen(LiveState("compact", captions, paused = true), RecordingState(phase = RecordingPhase.PAUSED),
                         UserSettings(fontSize = 8f), {}, {}, {}, {})
                 }
@@ -247,7 +250,7 @@ class ComposeUiTest {
         compose.onNodeWithContentDescription("切换为仅译文").assertDoesNotExist()
         compose.onNodeWithText("麦克风").assertDoesNotExist()
         compose.onNodeWithText("演示").assertDoesNotExist()
-        compose.onNodeWithText("模型 4/4").assertIsDisplayed()
+        compose.onNodeWithText("模型 4/4").assertDoesNotExist()
         compose.onNodeWithText("继续").assertIsDisplayed()
         compose.onNodeWithContentDescription("停止").assertIsDisplayed()
         val content = compose.onNodeWithTag("live-content").fetchSemanticsNode().boundsInRoot
@@ -335,18 +338,60 @@ class ComposeUiTest {
         compose.waitUntil(5000) { shadowOf(Looper.getMainLooper()).idle(); observed.value.isEmpty() }
         compose.onNodeWithText("Line 5").assertIsDisplayed()
     }
+    @Test @Config(qualifiers = "w900dp-h900dp-mdpi") fun expandedDockKeepsSettingsAtBottomAcrossPagesAndChildren() {
+        val app = ApplicationProvider.getApplicationContext<TranslateApplication>()
+        runBlocking { app.settings.update(UserSettings()) }
+        val vm = AppViewModel(app)
+        compose.setContent { TranslateApp(vm) }
+        val tags = listOf("app-dock", "dock-live", "dock-sessions", "dock-settings")
+        fun positions() = tags.map { compose.onNodeWithTag(it).fetchSemanticsNode().boundsInRoot }
+        val initial = positions()
+        assertTrue(initial[0].right <= 96f)
+        assertTrue(initial[3].top > 800f)
+        assertTrue(initial[1].bottom < initial[2].top)
+        assertTrue(initial[2].bottom < initial[3].top)
+        for (page in listOf("sessions", "settings", "live", "settings")) {
+            compose.onNodeWithTag("dock-$page").performClick()
+            assertEquals(initial, positions())
+        }
+        compose.onNodeWithContentDescription("离线模型").performClick()
+        assertEquals(initial, positions())
+        snapshot("dock-expanded-model-settings")
+        compose.onNodeWithContentDescription("返回设置").performClick()
+        compose.onNodeWithContentDescription("运行与诊断").performScrollTo().performClick()
+        assertEquals(initial, positions())
+    }
+
+    @Test fun compactDockKeepsItsBoundsAcrossAllPages() {
+        val selected = mutableStateOf(Page.LIVE)
+        compose.setContent { GlassTheme(UserSettings()) {
+            FoldAppShell(emptyList(), Modifier.fillMaxSize(), navigation = {
+                GlassNavigation(selected.value, it) { page -> selected.value = page }
+            }) { Box(Modifier.fillMaxSize()) }
+        } }
+        val initial = compose.onNodeWithTag("app-dock").fetchSemanticsNode().boundsInRoot
+        assertTrue(initial.top > 800f)
+        for (page in listOf("sessions", "settings", "live")) {
+            compose.onNodeWithTag("dock-$page").performClick()
+            assertEquals(initial, compose.onNodeWithTag("app-dock").fetchSemanticsNode().boundsInRoot)
+        }
+    }
+
     @Test fun navigationAndSettingsControlsAreInteractive() {
         val app = ApplicationProvider.getApplicationContext<TranslateApplication>()
         runBlocking { app.settings.update(UserSettings()) }
         val vm = AppViewModel(app)
         compose.setContent { TranslateApp(vm) }
+        compose.onAllNodes(SemanticsMatcher.expectValue(SemanticsProperties.Role, androidx.compose.ui.semantics.Role.Tab)).assertCountEquals(3)
+        compose.onNodeWithContentDescription("离线模型").assertDoesNotExist()
         compose.onNodeWithContentDescription("设置").performClick()
         compose.onNodeWithText("双语字幕").assertIsDisplayed().performClick()
         compose.waitUntil(5000) { shadowOf(Looper.getMainLooper()).idle(); !vm.settings.value.bilingual }
         compose.onNodeWithText("降低透明度").performScrollTo().performClick()
         compose.waitUntil(5000) { shadowOf(Looper.getMainLooper()).idle(); vm.settings.value.reduceTransparency }
-        compose.onNodeWithContentDescription("离线模型").performClick()
+        compose.onNodeWithContentDescription("离线模型").performScrollTo().performClick()
         compose.onNodeWithText("SenseVoice Small").assertIsDisplayed()
+        compose.onNodeWithContentDescription("返回设置").performClick()
         compose.onNodeWithContentDescription("即时字幕").performClick()
         compose.onNodeWithText("开始拾音").assertIsDisplayed()
         compose.onNodeWithContentDescription("设置").performClick()
@@ -356,6 +401,42 @@ class ComposeUiTest {
         assertTrue(vm.live.value.demo)
         assertEquals(com.jd.rc.localtranslate.audio.RecordingPhase.IDLE, vm.recording.value.phase)
     }
+    @Test fun sessionRequiresTwoSeparateLeftSwipesAndRightSwipeClosesDelete() {
+        val session = SavedSession("swipe", savedTitle, 1_791_520_000_000, 18, true, CaptionJson.encode(captions))
+        val records = mutableStateOf(listOf(session))
+        var deletes = 0
+        compose.setContent { GlassTheme(UserSettings()) {
+            SessionsScreen(records.value, UserSettings(), { _, _ -> }, { id ->
+                deletes++; records.value = records.value.filter { it.id != id }
+            }, { _, _, _ -> }, loadPage = ::fixturePage)
+        } }
+        compose.onNodeWithTag("swipe-session-swipe").performTouchInput { swipeLeft() }
+        compose.runOnIdle { assertEquals(0, deletes) }
+        compose.onNodeWithText("再滑一次").assertIsDisplayed()
+        snapshot("session-swipe-revealed")
+        compose.onNodeWithTag("swipe-session-swipe").performTouchInput { swipeRight() }
+        compose.onNodeWithText("再滑一次").assertDoesNotExist()
+        compose.onNodeWithTag("swipe-session-swipe").performTouchInput { swipeLeft() }
+        compose.runOnIdle { assertEquals(0, deletes) }
+        compose.onNodeWithTag("swipe-session-swipe").performTouchInput { swipeLeft() }
+        compose.runOnIdle { assertEquals(1, deletes) }
+        compose.onNodeWithText("还没有对话记录").assertIsDisplayed()
+    }
+
+    @Test fun settingsChildrenRestoreAndReturnWithModelsAsFirstEntry() {
+        val restoration = StateRestorationTester(compose)
+        restoration.setContent { GlassTheme(UserSettings()) { SettingsScreen(UserSettings(), RecordingState(), {}) } }
+        compose.onNodeWithContentDescription("离线模型").assertIsDisplayed().performClick()
+        compose.onNodeWithText("SenseVoice Small").assertIsDisplayed()
+        restoration.emulateSavedInstanceStateRestore()
+        compose.onNodeWithText("SenseVoice Small").assertIsDisplayed()
+        compose.onNodeWithContentDescription("返回设置").performClick()
+        compose.onNodeWithContentDescription("运行与诊断").performScrollTo().performClick()
+        compose.onNodeWithText("压力监测").assertExists()
+        compose.onNodeWithContentDescription("返回设置").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("离线模型").performScrollTo().assertIsDisplayed()
+    }
+
     @Test fun historicalSessionOpensAndOffersAllExportFormats() {
         render("session-list-interaction", Page.SESSIONS)
         compose.onNodeWithContentDescription("打开会话 $savedTitle").performClick()
@@ -400,8 +481,9 @@ class ComposeUiTest {
         }
         compose.onNodeWithText("省电").performScrollTo().performClick()
         compose.runOnIdle { assertEquals(PerformanceMode.ECO, settings.value.performanceMode); assertFalse(settings.value.keepSessions) }
+        compose.onNodeWithContentDescription("运行与诊断").performScrollTo().performClick()
         compose.onNodeWithText("严重").performScrollTo().assertIsDisplayed()
-        assertTrue(compose.onNodeWithText("严重").fetchSemanticsNode().boundsInRoot.left > 460)
+        assertTrue(compose.onNodeWithText("严重").fetchSemanticsNode().boundsInRoot.right < 440)
         assertTrue(compose.onNodeWithContentDescription("设置").fetchSemanticsNode().boundsInRoot.left > 460)
         snapshot("settings-runtime-fold")
     }
@@ -415,6 +497,7 @@ class ComposeUiTest {
                 }
             }
         }
+        compose.onNodeWithContentDescription("运行与诊断").performScrollTo().performClick()
         compose.onNodeWithContentDescription("导出运行诊断").performScrollTo().performClick()
         compose.onNodeWithText("JSON").assertIsDisplayed(); compose.onNodeWithText("CSV").assertIsDisplayed()
         assertTrue(compose.onNodeWithText("JSON").fetchSemanticsNode().boundsInRoot.right < 440)

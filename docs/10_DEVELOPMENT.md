@@ -27,7 +27,7 @@ APK：`app/build/outputs/apk/debug/app-debug.apk`。测试报告：`app/build/re
 
 ## 当前实现
 
-- Live、Models、Sessions、Settings 使用 Compose / Navigation Compose；ViewModel 暴露 StateFlow。
+- Live、Sessions、Settings 使用 Compose / Navigation Compose；Models 为 Settings 首项子页，运行与诊断为另一子页；ViewModel 暴露 StateFlow。展开平屏 dock 的 Settings 固定底部。
 - WindowManager 监听实际铰链，处理 book、tabletop、实体遮挡及安全单区回退。页面、录音控制、导航、弹窗与工具提示避让；保持导航及阅读位置。展开平屏也按扣除导航后的可用宽度分栏：Models 语音 / 翻译，Settings 显示与隐私 / 性能与诊断，Sessions 列表 / 所选详情，Live 历史 / 最新译文和控制。收窄保留所选记录及详情阅读位置，紧凑详情的系统返回先回列表。详见 06_GUI。
 - GUI 使用牛皮纸暖色主题：淡黄纯色背景、浅米黄不透明面板、棕色主按钮与深棕正文；背景及面板不再绘制曲线渐变和玻璃高光，字幕保持无框排版。支持浅/深/系统主题、降低透明度、8–24 sp 字号、系统字体缩放、手机及侧栏布局；深色模式使用暖棕色，降低透明度时移除面板轻微阴影。`GlassTheme.kt` 统一管理 4 / 8 / 12 / 16 dp 圆角与 16 dp 正文 / 8 dp 面板边距；按钮和分段控件显式使用主题圆角，避免 Material 默认胶囊形状。布局避让及交互逻辑沿用原实现。
 - Android 麦克风前台服务采集 PCM16 / mono，优先 16 kHz，回退 48 / 44.1 / 32 / 8 kHz。IO 线程非阻塞读取，仅 `trySend` 到容量 32 的 DSP 队列，独立 worker 用 Media3 common 1.11.1 SonicAudioProcessor 转为 16 kHz，再非阻塞送到容量 32 的推理输入队列。电平及采样时钟最多 10 Hz 更新；停止首先取消采集并释放 AudioRecord，重采样尾帧排空不等待推理。暂停还冲刷不足 512 samples 的 VAD 尾窗，恢复保留采样偏移。通知有停止入口，不保存 PCM。

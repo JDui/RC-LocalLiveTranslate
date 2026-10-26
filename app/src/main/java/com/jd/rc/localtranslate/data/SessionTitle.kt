@@ -5,7 +5,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-/** Freeze the device-local start time and user-supplied city in the saved title. */
+/** Freeze the device-local start time and selected city in the saved title. */
 object SessionTitle {
     private val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd-HH:mm", Locale.ROOT)
     private val legacyTitles = setOf("本地对话", "多语言对话 · 演示")

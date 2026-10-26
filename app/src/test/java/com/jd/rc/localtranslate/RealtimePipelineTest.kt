@@ -133,6 +133,38 @@ class RealtimePipelineTest {
         assertEquals(1L, timings.getJSONObject("TRANSLATE_YUE").getLong("completed"))
     }
 
+    @Test fun speakerStartsOnFirstShortWindowBeforeSentenceOrAsrCompletes() = runBlocking {
+        val backing = Engines()
+        val embeddingCalls = java.util.concurrent.atomic.AtomicInteger()
+        val asrStarted = java.util.concurrent.CountDownLatch(1)
+        val allowAsr = java.util.concurrent.CountDownLatch(1)
+        val engines = object : SpeechEngines by backing {
+            override fun embedding(samples: FloatArray): FloatArray? {
+                embeddingCalls.incrementAndGet(); return backing.embedding(samples)
+            }
+            override fun recognize(samples: FloatArray): RecognizedSpeech {
+                asrStarted.countDown()
+                check(allowAsr.await(5, java.util.concurrent.TimeUnit.SECONDS))
+                return backing.recognize(samples)
+            }
+        }
+        val store = ConversationStore().apply { begin("session") }
+        val pipeline = RealtimePipeline("session", engines, store, this)
+        try {
+            val offset = feed(pipeline, 0, 26)
+            withTimeout(5000) { while (embeddingCalls.get() == 0) delay(1) }
+            assertEquals(1L, asrStarted.count)
+            assertTrue(store.state.value.captions.isEmpty())
+            feed(pipeline, offset, 14)
+            withTimeout(5000) { while (asrStarted.count > 0) delay(1) }
+            assertTrue(store.state.value.captions.isEmpty())
+            allowAsr.countDown()
+            withTimeout(5000) { while (store.state.value.captions.firstOrNull()?.stage != CaptionStage.FINAL) delay(1) }
+            assertEquals("A", store.state.value.captions.single().speakerId)
+            assertEquals(1, embeddingCalls.get())
+        } finally { allowAsr.countDown(); pipeline.finish() }
+    }
+
     @Test fun finalAsrTranslationAndSpeakerBackfillReachStore() = runBlocking {
         val engines = Engines(); val store = ConversationStore().apply { begin("session") }
         val pipeline = RealtimePipeline("session", engines, store, this)
@@ -144,7 +176,7 @@ class RealtimePipelineTest {
         assertEquals(3, captions.size)
         assertTrue(captions.all { it.stage == CaptionStage.FINAL && it.translationStatus == TranslationStatus.COMPLETE })
         assertEquals(listOf(SourceLanguage.EN, SourceLanguage.JA, SourceLanguage.EN), captions.map { it.sourceLanguage })
-        assertEquals("A", captions.first().speakerId); assertNull(captions[1].speakerId); assertEquals("A", captions.last().speakerId)
+        assertEquals("A", captions.first().speakerId); assertEquals("B", captions[1].speakerId); assertEquals("A", captions.last().speakerId)
         assertEquals(40 * 512L, captions[1].startSample)
         assertTrue(engines.closed.get())
     }

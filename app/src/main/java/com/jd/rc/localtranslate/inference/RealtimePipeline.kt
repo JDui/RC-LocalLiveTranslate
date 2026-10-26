@@ -132,6 +132,7 @@ class RealtimePipeline(private val sessionId: String, private val engines: Speec
         }
         val speakerWorker = scope.launch { guarded("声纹推理失败，暂用未知说话人。") {
             var ended = false
+            val assigned = linkedSetOf<String>()
             try {
                 while (!ended) {
                     ensureProcessing()
@@ -146,6 +147,7 @@ class RealtimePipeline(private val sessionId: String, private val engines: Speec
                         continue
                     }
                     if (work == null) continue
+                    if (work.id in assigned || work.samples.size < SpeakerTracker.MINIMUM_SAMPLES) continue
                     ensureProcessing()
                     val vector = diagnostics.measure(InferenceStage.SPEAKER, work.samples.size, work.queuedAtNanos) { engines.embedding(work.samples) } ?: continue
                     ensureProcessing()
@@ -156,6 +158,10 @@ class RealtimePipeline(private val sessionId: String, private val engines: Speec
                     tracker.drainMerges().forEach { store.publishMerge(sessionId, it) }
                     assignments.forEach {
                         store.publish(SubtitleEvent.Speaker(sessionId, it.segmentId, it.revision, it.speakerId))
+                    }
+                    if (assignments.any { it.segmentId == work.id }) {
+                        assigned += work.id
+                        while (assigned.size > 256) assigned.remove(assigned.first())
                     }
                 }
             } finally { tracker.clear(); speakerQueue.close(); engines.releaseSpeaker() }
@@ -234,8 +240,6 @@ class RealtimePipeline(private val sessionId: String, private val engines: Speec
                         if (work.final) {
                             diagnostics.finalPublished(work.queuedAtNanos)
                             val downstream = work.copy(queuedAtNanos = diagnostics.nowNanos())
-                            if (speakerQueue.trySend(downstream).isSuccess) speakerStats.accepted()
-                            else { speakerStats.rejected(); store.warn("声纹队列积压，部分语段暂未分配说话人。") }
                             if (translationMode.target(recognized.language) != null &&
                                 !translations.trySend(TranslationWork(work.id, work.revision, recognized.text, recognized.language,
                                     requireNotNull(translationMode.target(recognized.language)), downstream.queuedAtNanos)).isSuccess) {
@@ -247,7 +251,7 @@ class RealtimePipeline(private val sessionId: String, private val engines: Speec
                     }
                     if (work.final) finalized.remove(work.id)
                 }
-            } finally { speakerQueue.close(); translations.close() }
+            } finally { translations.close() }
         } }
         workers = listOf(asrWorker, speakerWorker, translationWorker)
         frontend = scope.launch { guarded("语音检测失败，请检查模型。", fatal = true) { segmentAudio() } }
@@ -296,13 +300,21 @@ class RealtimePipeline(private val sessionId: String, private val engines: Speec
         var expected = -1L; var base = 0L; var processed = 0L
         val window = FloatArray(512); var filled = 0
         var currentId: String? = null; var currentStart = 0L; var revision = 0; var lastPartial = 0L
+        var lastSpeaker = 0L; var speakerStart = 0L; var speakerAttempted = false
         var serial = 0L
         fun nextId() = "speech-${serial++}"
+        fun offerSpeaker(work: SpeechWork) {
+            if (!runtime.value.policy.speakerEnabled) { if (work.final) store.skippedSpeaker(); return }
+            if (work.samples.size < SpeakerTracker.MINIMUM_SAMPLES) return
+            if (speakerQueue.trySend(work).isSuccess) speakerStats.accepted()
+            else { speakerStats.rejected(); if (work.final) store.warn("声纹队列积压，部分语段暂未分配说话人。") }
+        }
         fun finalizeSegments() {
             for (segment in engines.takeSegments()) {
                 val id = currentId ?: nextId()
                 val start = base + segment.start
                 val work = SpeechWork(id, start, start + segment.samples.size, segment.samples, ++revision, true, diagnostics.nowNanos())
+                offerSpeaker(work)
                 finalized[id] = work.revision
                 if (finals.trySend(work).isSuccess) finalStats.accepted()
                 else { finalStats.rejected(); finalized.remove(id); store.dropped() }
@@ -338,6 +350,14 @@ class RealtimePipeline(private val sessionId: String, private val engines: Speec
                         if (engines.speechDetected()) {
                             if (currentId == null) {
                                 currentId = nextId(); currentStart = maxOf(base, processed - 8_000); lastPartial = currentStart
+                                speakerStart = processed - window.size; lastSpeaker = speakerStart; speakerAttempted = false
+                            }
+                            // Independent of ASR and sentence completion. Retry ambiguous/unready evidence at most once a second.
+                            if (processed - speakerStart >= SpeakerTracker.MINIMUM_SAMPLES &&
+                                (!speakerAttempted || processed - lastSpeaker >= 16_000L)) {
+                                val samples = ring.slice(maxOf(speakerStart, processed - 32_000), processed)
+                                offerSpeaker(SpeechWork(currentId!!, processed - samples.size, processed, samples, 0, false, diagnostics.nowNanos()))
+                                lastSpeaker = processed; speakerAttempted = true
                             }
                             val interval = runtime.value.policy.partialIntervalSamples
                             if (interval > 0 && processed - lastPartial >= interval) {
@@ -356,6 +376,6 @@ class RealtimePipeline(private val sessionId: String, private val engines: Speec
             ensureProcessing()
             if (filled > 0) { engines.acceptVad(window.copyOf(filled)); filled = 0 }
             engines.flushVad(); finalizeSegments()
-        } finally { input.close(); finals.close(); partials.close() }
+        } finally { input.close(); finals.close(); partials.close(); speakerQueue.close() }
     }
 }

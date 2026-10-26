@@ -1,5 +1,5 @@
 #requires -Version 7.0
-param([string]$Version = '0.1.0-prealpha.5', [string]$OutputFile = '')
+param([string]$Version = '0.1.0-prealpha.6', [string]$OutputFile = '')
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 $assets = Join-Path $root '.tools/bundled-model-assets/bundled-models'

@@ -17,3 +17,8 @@ Use monotonically increasing speaker revisions for the entire session. Allocate 
 Synthetic vector and reducer tests cover convergence, separation, old-history merging, delayed events, cycles, revision ordering, dimension / duration rejection, capacity, and bounded retention. These tests do not establish human identity accuracy, CAM++ cross-language invariance, overlapping speech recovery, or measured performance. Thresholds require device and licensed human-speech calibration before a stable release.
 
 The conservative all-evidence gates can leave imperfect clusters unchanged. Finite label allocation can leave new voices unknown in unusually long or unstable sessions. This is preferable to silently reusing retired labels or making unsupported revisions outside the evidence window.
+
+
+## 2026-10-26 First-evidence assignment
+
+VAD now schedules embedding independently of ASR, with an initial 0.8-second evidence gate, one-second retries for unresolved segments, a two-second rolling speculative window and a full-segment fallback. The bounded speaker queue closes with the frontend. A clear novel vector is labelled immediately; a second distinct segment remains necessary for confirmed-cluster reconciliation. Duplicate accepted segment IDs never add confirmation evidence. Match, novelty, ambiguity, merge/split, cooldown and label-cap rules are unchanged. Short, invalid or ambiguous observations remain unknown. This reduces software waiting, without asserting measured CAM++ accuracy or intra-segment turn segmentation.

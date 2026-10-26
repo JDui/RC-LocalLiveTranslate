@@ -52,7 +52,7 @@ class NativeEngines private constructor(private val lease: ModelLease, private v
         } finally { stream.release() }
     }
     override fun embedding(samples: FloatArray): FloatArray? {
-        if (samples.size < 19_200) return null
+        if (samples.size < com.jd.rc.localtranslate.core.SpeakerTracker.MINIMUM_SAMPLES) return null
         val extractor = speaker ?: SpeakerEmbeddingExtractor(config = SpeakerEmbeddingExtractorConfig(
             model = lease.bundles.getValue("speaker").required("speaker.onnx").path, numThreads = 1)).also { speaker = it }
         val stream = extractor.createStream()

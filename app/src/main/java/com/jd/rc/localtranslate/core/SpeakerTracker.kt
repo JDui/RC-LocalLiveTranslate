@@ -43,7 +43,7 @@ class SpeakerTracker(private val matchThreshold: Float = .65f, private val novel
     }
 
     fun observe(segmentId: String, embedding: FloatArray, durationSeconds: Float): List<SpeakerAssignment> {
-        if (segmentId.isBlank() || !durationSeconds.isFinite() || durationSeconds < 1.2f || segmentId in history) return emptyList()
+        if (segmentId.isBlank() || !durationSeconds.isFinite() || durationSeconds < MINIMUM_SECONDS || segmentId in history) return emptyList()
         val vector = normalized(embedding) ?: return emptyList()
         if (clusters.any { it.centroid.size != vector.size }) return emptyList()
         val scores = clusters.map { it to dot(it.centroid, vector) }.sortedByDescending { it.second }
@@ -69,7 +69,8 @@ class SpeakerTracker(private val matchThreshold: Float = .65f, private val novel
             clusters.forEach { it.pending.remove(oldest) }
         }
         val changed = linkedSetOf<String>()
-        if (cluster.observations >= 2) { changed += cluster.pending; cluster.pending.clear() }
+        // A clear first observation gets a label immediately; reconciliation still needs repeated evidence.
+        changed += cluster.pending; cluster.pending.clear()
         if (accepted % reconciliation.interval == 0L) reconcile(changed)
         return changed.mapNotNull { id -> history[id]?.let { SpeakerAssignment(id, it.clusterId, nextRevision()) } }
     }
@@ -157,4 +158,9 @@ class SpeakerTracker(private val matchThreshold: Float = .65f, private val novel
         return FloatArray(input.size) { (input[it] / norm).toFloat() }
     }
     private fun dot(a: FloatArray, b: FloatArray) = a.indices.sumOf { a[it].toDouble() * b[it] }.toFloat()
+
+    companion object {
+        const val MINIMUM_SECONDS = .8f
+        const val MINIMUM_SAMPLES = 12_800
+    }
 }

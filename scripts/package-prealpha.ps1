@@ -1,5 +1,5 @@
 #requires -Version 7.0
-param([string]$Version = '0.1.0-prealpha.5', [string]$Apk = '', [switch]$BundledModels, [string]$OutputFile = '')
+param([string]$Version = '0.1.0-prealpha.6', [string]$Apk = '', [switch]$BundledModels, [string]$OutputFile = '')
 $ErrorActionPreference = 'Stop'
 if ($Version -notmatch '^\d+\.\d+\.\d+-prealpha\.\d+$') { throw 'An explicit prealpha version is required' }
 $root = Split-Path $PSScriptRoot -Parent

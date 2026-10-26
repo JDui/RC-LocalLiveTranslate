@@ -81,6 +81,17 @@ class SettingsRepository(private val context: Context) {
     }
     suspend fun update(value: UserSettings) = update(SettingsChange(value.theme, value.bilingual,
         value.fontSize, value.keepSessions, value.reduceTransparency, value.performanceMode, value.translationMode, value.sessionCity))
+
+    suspend fun updateCityIfUnchanged(expected: String, value: String): Boolean {
+        var changed = false
+        context.preferences.edit {
+            if (SessionTitle.normalizeCity(it[city].orEmpty()) == expected) {
+                it[city] = SessionTitle.normalizeCity(value)
+                changed = true
+            }
+        }
+        return changed
+    }
 }
 
 @Entity(tableName = "sessions")
