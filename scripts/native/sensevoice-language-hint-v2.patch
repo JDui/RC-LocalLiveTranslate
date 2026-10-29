@@ -1,0 +1,28 @@
+diff --git a/sherpa-onnx/csrc/offline-recognizer-sense-voice-impl.h b/sherpa-onnx/csrc/offline-recognizer-sense-voice-impl.h
+--- a/sherpa-onnx/csrc/offline-recognizer-sense-voice-impl.h
++++ b/sherpa-onnx/csrc/offline-recognizer-sense-voice-impl.h
+@@ -199,6 +199,12 @@
+     int32_t default_use_itn = config_.model_config.sense_voice.use_itn;
+     std::vector<int32_t> text_norm_array(n);
+     for (int32_t i = 0; i != n; ++i) {
++      // An optional second-pass hypothesis; the automatic first pass is unchanged.
++      const auto hint = ss[i]->GetOption("rc_language_hint");
++      const auto hint_id = meta_data.lang2id.find(hint);
++      if (!hint.empty() && hint_id != meta_data.lang2id.end()) {
++        language_array[i] = hint_id->second;
++      }
+       int32_t use_itn = ss[i]->GetOptionInt("use_itn", default_use_itn);
+       text_norm_array[i] =
+           use_itn ? meta_data.with_itn_id : meta_data.without_itn_id;
+@@ -329,6 +335,11 @@
+                        config_.model_config.sense_voice.language.c_str());
+     }
+ 
++    const auto hint = s->GetOption("rc_language_hint");
++    const auto hint_id = meta_data.lang2id.find(hint);
++    if (!hint.empty() && hint_id != meta_data.lang2id.end()) {
++      language = hint_id->second;
++    }
+     // Per-stream use_itn override via
+     // OfflineStream::SetOption("use_itn", "1"|"0").
+     // Falls back to model_config.sense_voice.use_itn when the option is absent.

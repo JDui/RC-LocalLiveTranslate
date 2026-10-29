@@ -60,7 +60,113 @@ class SpeakerTrackerTest {
         assertTrue(tracker.observe("one", voice(0), 2f).isEmpty())
         assertEquals(listOf("two"), tracker.observe("two", voice(0), 2f).map { it.segmentId })
     }
-    @Test fun driftingClusterSplitsOnlyRetainedEvidenceAndKeepsOriginalAnchor() {
+    @Test fun finalEvidenceCorrectsAnEarlyPreviewWithoutCountingItTwice() {
+        val tracker = SpeakerTracker()
+        tracker.observe("known-A", voice(0), 2f)
+        tracker.observe("known-B", voice(90), 2f)
+        val early = tracker.preview("sentence", voice(0), .8f).single()
+        assertEquals("A", early.speakerId)
+        assertEquals(2, tracker.retainedEvidenceCount)
+        assertEquals(2L, tracker.acceptedObservationCount)
+        val final = tracker.observe("sentence", voice(90), 3f).single()
+        assertEquals("B", final.speakerId)
+        assertTrue(final.revision > early.revision)
+        assertEquals(3, tracker.retainedEvidenceCount)
+        assertEquals(3L, tracker.acceptedObservationCount)
+        assertTrue(tracker.observe("sentence", voice(0), 3f).isEmpty())
+        assertTrue(tracker.preview("sentence", voice(0), .8f).isEmpty())
+        assertEquals(3L, tracker.acceptedObservationCount)
+    }
+    @Test fun ambiguousAndInvalidFinalEvidenceWithdrawEarlyLabels() {
+        val tracker = SpeakerTracker()
+        tracker.observe("known-A", voice(0), 2f)
+        tracker.observe("known-B", voice(90), 2f)
+        val early = tracker.preview("ambiguous", voice(0), .8f).single()
+        val withdrawal = tracker.observe("ambiguous", voice(45), 2f).single()
+        assertNull(withdrawal.speakerId)
+        assertTrue(withdrawal.revision > early.revision)
+        val invalidEarly = tracker.preview("invalid", voice(90), .8f).single()
+        val invalid = tracker.observe("invalid", floatArrayOf(), 2f).single()
+        assertNull(invalid.speakerId)
+        assertTrue(invalid.revision > invalidEarly.revision)
+        val shortEarly = tracker.preview("short-final", voice(90), .8f).single()
+        val short = tracker.observe("short-final", voice(90), .3f).single()
+        assertNull(short.speakerId)
+        assertTrue(short.revision > shortEarly.revision)
+        assertEquals(2L, tracker.acceptedObservationCount)
+        assertEquals(0, tracker.retainedPreviewCount)
+        assertTrue(tracker.observe("ambiguous", voice(0), 2f).isEmpty())
+    }
+    @Test fun previewsDoNotTrainTemplatesAndFirstFinalReplacesSpeculativeAnchor() {
+        val tracker = SpeakerTracker()
+        assertEquals("A", tracker.preview("first", voice(0), .8f).single().speakerId)
+        repeat(100) { assertTrue(tracker.preview("first", voice(45), 2f).isEmpty()) }
+        assertEquals(0, tracker.retainedEvidenceCount)
+        assertEquals(0L, tracker.acceptedObservationCount)
+        assertEquals("A", tracker.observe("first", voice(40), 3f).single().speakerId)
+        // Forty degrees from the final anchor, but eighty from the discarded preview anchor.
+        assertEquals("A", tracker.observe("next", voice(80), 2f).single().speakerId)
+        assertEquals(2L, tracker.acceptedObservationCount)
+        assertEquals(1, tracker.allocatedSpeakerCount)
+    }
+    @Test fun withdrawingPreviewsPreservesFinalEvidenceAndAllowsLaterFinalVerification() {
+        val tracker = SpeakerTracker()
+        tracker.observe("confirmed", voice(0), 2f)
+        tracker.preview("finished", voice(0), .8f)
+        tracker.observe("finished", voice(0), 2f)
+        val knownPreview = tracker.preview("pending-known", voice(0), .8f).single()
+        val novelPreview = tracker.preview("pending-novel", voice(90), .8f).single()
+        assertEquals("B", novelPreview.speakerId)
+        val withdrawn = tracker.withdrawPreviews()
+        assertEquals(listOf("pending-known", "pending-novel"), withdrawn.map { it.segmentId })
+        assertTrue(withdrawn.all { it.speakerId == null && it.revision > maxOf(knownPreview.revision, novelPreview.revision) })
+        assertEquals(0, tracker.retainedPreviewCount)
+        assertEquals(2, tracker.retainedEvidenceCount)
+        assertEquals(2L, tracker.acceptedObservationCount)
+        assertTrue(tracker.withdrawPreviews().isEmpty())
+        assertTrue(tracker.observe("confirmed", voice(90), 2f).isEmpty())
+        assertEquals("A", tracker.observe("pending-known", voice(0), 2f).single().speakerId)
+        // Only confirmed labels are retired; the unused reservation is available again.
+        assertEquals("B", tracker.observe("pending-novel", voice(90), 2f).single().speakerId)
+        assertEquals(4L, tracker.acceptedObservationCount)
+    }
+    @Test fun previewsOfAnEstablishedVoiceCannotPullItsTemplate() {
+        val tracker = SpeakerTracker()
+        tracker.observe("anchor", voice(0), 2f)
+        repeat(256) { index -> assertEquals("A", tracker.preview("preview-$index", voice(45), .8f).single().speakerId) }
+        assertEquals(1L, tracker.acceptedObservationCount)
+        assertEquals(1, tracker.retainedEvidenceCount)
+        assertEquals("B", tracker.observe("different-voice", voice(90), 2f).single().speakerId)
+        assertEquals("A", tracker.observe("return", voice(0), 2f).single().speakerId)
+    }
+    @Test fun repeatedPreviewWithdrawalCannotExhaustConfirmedSpeakerCapacity() {
+        val tracker = SpeakerTracker(maxSpeakers = 2)
+        repeat(64) { index ->
+            assertEquals("A", tracker.preview("lost-$index", voice(0), .8f).single().speakerId)
+            assertEquals(0, tracker.allocatedSpeakerCount)
+            assertNull(tracker.withdrawPreviews().single().speakerId)
+        }
+        assertEquals("A", tracker.observe("real-A", voice(0), 2f).single().speakerId)
+        repeat(64) { index ->
+            tracker.preview("failed-$index", voice(90), .8f)
+            tracker.observe("failed-$index", floatArrayOf(), 2f)
+        }
+        assertEquals(1, tracker.allocatedSpeakerCount)
+        assertEquals("B", tracker.observe("real-B", voice(90), 2f).single().speakerId)
+        assertEquals(2, tracker.allocatedSpeakerCount)
+        assertTrue(tracker.observe("third", voice(180), 2f).isEmpty())
+    }
+    @Test fun marginalFinalMatchesCannotGraduallyDragTheTemplateAway() {
+        val tracker = SpeakerTracker()
+        tracker.observe("anchor", voice(0), 2f)
+        repeat(200) { index -> assertEquals("A", tracker.observe("edge-$index", voice(45), 2f).single().speakerId) }
+        assertTrue(tracker.observe("past-anchor-support", voice(50), 2f).isEmpty())
+        assertEquals("B", tracker.observe("different-voice", voice(90), 2f).single().speakerId)
+        assertEquals("A", tracker.observe("return", voice(0), 2f).single().speakerId)
+        assertEquals(2, tracker.allocatedSpeakerCount)
+        assertTrue(tracker.drainMerges().isEmpty())
+    }
+    @Test fun separatedRetainedModesSplitAndKeepTheOriginalAnchorLabel() {
         val tracker = SpeakerTracker()
         val labels = mutableMapOf<String, String?>()
         var index = 0
@@ -68,12 +174,14 @@ class SpeakerTrackerTest {
             tracker.observe("segment-${index++}", voice(degrees), 2f).forEach { labels[it.segmentId] = it.speakerId }
             assertTrue(tracker.drainMerges().isEmpty())
         }
-        observations(0, 32); observations(30, 20); observations(60, 24); observations(90, 64)
+        // Both modes pass the original anchor gate, while the far mode cannot train the centroid.
+        observations(-6, 1); observations(-40, 15); observations(40, 16)
         assertEquals("A", labels["segment-0"])
-        assertEquals("B", labels["segment-70"])
-        assertEquals("B", labels["segment-139"])
-        assertEquals("A", tracker.observe("return-A", voice(0), 2f).last().speakerId)
-        assertEquals("B", tracker.observe("return-B", voice(90), 2f).last().speakerId)
+        assertEquals("A", labels["segment-15"])
+        assertEquals("B", labels["segment-16"])
+        assertEquals("B", labels["segment-31"])
+        assertEquals("A", tracker.observe("return-A", voice(-40), 2f).last().speakerId)
+        assertEquals("B", tracker.observe("return-B", voice(40), 2f).last().speakerId)
         assertEquals(2, tracker.allocatedSpeakerCount)
     }
     @Test fun convergentClustersMergeAndRetiredLabelIsNeverReused() {
@@ -92,6 +200,8 @@ class SpeakerTrackerTest {
         assertEquals("B", merges.single().fromId)
         assertEquals("A", merges.single().intoId)
         assertEquals("A", tracker.observe("same-voice", voice(62), 2f).last().speakerId)
+        assertEquals("A", tracker.observe("original-A", voice(0), 2f).last().speakerId)
+        assertEquals("A", tracker.observe("original-B", voice(100), 2f).last().speakerId)
         assertEquals("C", tracker.observe("novel-one", voice(180), 2f).single().speakerId)
         val next = tracker.observe("novel-two", voice(180), 2f).last()
         assertEquals("C", next.speakerId)
@@ -126,5 +236,28 @@ class SpeakerTrackerTest {
         assertTrue(tracker.drainMerges().isEmpty())
         assertEquals("A", tracker.observe("fresh", voice(90), 2f).single().speakerId)
         assertEquals("A", tracker.observe("fresh-two", voice(90), 2f).last().speakerId)
+    }
+    @Test fun previewAndFinalDeduplicationMemoryAreBoundedAndCleared() {
+        val tracker = SpeakerTracker()
+        repeat(1024) { index ->
+            assertEquals("A", tracker.preview("$index", voice(0), .8f).single().speakerId)
+            assertTrue(tracker.retainedPreviewCount <= 256)
+        }
+        assertEquals(256, tracker.retainedPreviewCount)
+        assertEquals(0, tracker.retainedEvidenceCount)
+        assertEquals(0L, tracker.acceptedObservationCount)
+        repeat(1024) { index ->
+            tracker.observe("$index", floatArrayOf(), 2f)
+            assertTrue(tracker.retainedFinalizedCount <= 256)
+        }
+        assertEquals(0, tracker.retainedPreviewCount)
+        assertEquals(256, tracker.retainedFinalizedCount)
+        assertEquals(0L, tracker.acceptedObservationCount)
+        tracker.clear()
+        assertEquals(0, tracker.retainedPreviewCount)
+        assertEquals(0, tracker.retainedFinalizedCount)
+        assertEquals(0, tracker.allocatedSpeakerCount)
+        assertEquals("A", tracker.preview("fresh", voice(90), .8f).single().speakerId)
+        assertEquals("A", tracker.observe("fresh", voice(90), 2f).single().speakerId)
     }
 }

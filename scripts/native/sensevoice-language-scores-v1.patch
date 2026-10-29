@@ -1,0 +1,78 @@
+diff --git a/sherpa-onnx/csrc/offline-recognizer-sense-voice-impl.h b/sherpa-onnx/csrc/offline-recognizer-sense-voice-impl.h
+index 8b9cffa..237fff7 100644
+--- a/sherpa-onnx/csrc/offline-recognizer-sense-voice-impl.h
++++ b/sherpa-onnx/csrc/offline-recognizer-sense-voice-impl.h
+@@ -20,6 +20,7 @@
+ #include "sherpa-onnx/csrc/offline-recognizer.h"
+ #include "sherpa-onnx/csrc/offline-sense-voice-model.h"
+ #include "sherpa-onnx/csrc/pad-sequence.h"
++#include "sherpa-onnx/csrc/rc-sensevoice-language-scores.h"
+ #include "sherpa-onnx/csrc/symbol-table.h"
+-
++
+ namespace sherpa_onnx {
+@@ -223,6 +224,8 @@ class OfflineRecognizerSenseVoiceImpl : public OfflineRecognizerImpl {
+       return;
+     }
+-
++
++    ExportLanguageScores(logits, ss, n);
++
+     // decoder_->Decode() requires that logits_length is of dtype int64
+     std::vector<int64_t> features_length_vec_64;
+     features_length_vec_64.reserve(n);
+@@ -352,6 +355,8 @@ class OfflineRecognizerSenseVoiceImpl : public OfflineRecognizerImpl {
+       return;
+     }
+-
++
++    ExportLanguageScores(logits, &s, 1);
++
+     int64_t new_num_frames = num_frames + 4;
+     Ort::Value logits_length = Ort::Value::CreateTensor(
+         memory_info, &new_num_frames, 1, &scale_shape, 1);
+@@ -369,5 +374,43 @@ class OfflineRecognizerSenseVoiceImpl : public OfflineRecognizerImpl {
+     s->SetResult(r);
+   }
+-
++
++  // RC language-score adapter: read evidence without changing auto decoding.
++  void ExportLanguageScores(const Ort::Value &logits, OfflineStream **streams,
++                            int32_t count) const {
++    const std::array<std::string, 5> languages = {"zh", "en", "ja", "ko", "yue"};
++    for (int32_t i = 0; i < count; ++i) {
++      for (const auto &language : languages) {
++        streams[i]->SetOption("rc_language_score_" + language, "");
++      }
++    }
++    if (count <= 0 || model_->GetModelMetadata().is_funasr_nano ||
++        !logits.IsTensor()) return;
++    const auto info = logits.GetTensorTypeAndShapeInfo();
++    const auto shape = info.GetShape();
++    if (info.GetElementType() != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT ||
++        shape.size() != 3 || shape[0] != count || shape[1] <= 0 ||
++        shape[2] <= 0) return;
++    const auto vocabulary_size = static_cast<size_t>(shape[2]);
++    const auto stride = info.GetElementCount() / static_cast<size_t>(count);
++    if (stride < vocabulary_size) return;
++    std::array<int32_t, 5> ids;
++    for (size_t i = 0; i < languages.size(); ++i) {
++      const auto token = "<|" + languages[i] + "|>";
++      if (!symbol_table_.Contains(token)) return;
++      ids[i] = symbol_table_[token];
++    }
++    const auto *data = logits.GetTensorData<float>();
++    for (int32_t i = 0; i < count; ++i) {
++      std::array<float, 5> scores;
++      if (!rc_localtranslate::ReadSenseVoiceLanguageScores(
++              data + static_cast<size_t>(i) * stride, vocabulary_size, ids,
++              &scores)) continue;
++      for (size_t j = 0; j < languages.size(); ++j) {
++        streams[i]->SetOption("rc_language_score_" + languages[j],
++                              std::to_string(scores[j]));
++      }
++    }
++  }
++
+   void PostInit() {
+     InitFeatConfig();

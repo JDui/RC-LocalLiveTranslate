@@ -22,3 +22,7 @@ The conservative all-evidence gates can leave imperfect clusters unchanged. Fini
 ## 2026-10-26 First-evidence assignment
 
 VAD now schedules embedding independently of ASR, with an initial 0.8-second evidence gate, one-second retries for unresolved segments, a two-second rolling speculative window and a full-segment fallback. The bounded speaker queue closes with the frontend. A clear novel vector is labelled immediately; a second distinct segment remains necessary for confirmed-cluster reconciliation. Duplicate accepted segment IDs never add confirmation evidence. Match, novelty, ambiguity, merge/split, cooldown and label-cap rules are unchanged. Short, invalid or ambiguous observations remain unknown. This reduces software waiting, without asserting measured CAM++ accuracy or intra-segment turn segmentation.
+
+## 2026-10-29 Reviewed previews and identity quota
+
+Preview matching no longer trains templates. Complete-sentence evidence can correct or withdraw it. Preview labels reserve finite slots without committing historical identities; failed/withdrawn/evicted unconfirmed reservations are released. Only accepted final evidence commits an identity to the lifetime quota, and committed identities are never reused. This closes the independent-review reproduction where 16 preview/withdraw cycles exhausted a session with zero confirmed voices. Acoustic anchors and stricter final template updates guard drift. See ADR-0009 for bounds, asynchronous language review and remaining calibration work.

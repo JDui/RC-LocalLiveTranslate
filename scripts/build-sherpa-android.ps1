@@ -23,6 +23,30 @@ $commit = git -C $source rev-parse HEAD
 if ($LASTEXITCODE -ne 0 -or $commit -cne '11afbd009a7f8c08f4bcf2fc1b265d0df4670fbf') { throw 'Pinned sherpa-onnx source is required; run bootstrap-native.ps1' }
 git -C $source sparse-checkout add cmake sherpa-onnx/csrc sherpa-onnx/jni
 if ($LASTEXITCODE -ne 0) { throw 'Cannot materialize pinned native source' }
+$languagePatchId = 'rc-sensevoice-language-scores-v1'
+$languagePatch = Join-Path $PSScriptRoot 'native/sensevoice-language-scores-v1.patch'
+$languageHeader = Join-Path $PSScriptRoot 'native/rc-sensevoice-language-scores.h'
+foreach ($file in @($languagePatch, $languageHeader)) {
+    if (!(Test-Path -LiteralPath $file)) { throw "Missing reproducible native adapter source: $file" }
+}
+# A fully applied patch is safe to reuse. Preserve and reject any incompatible local changes.
+git -C $source apply --reverse --check $languagePatch 2>$null
+if ($LASTEXITCODE -ne 0) {
+    git -C $source apply --check $languagePatch
+    if ($LASTEXITCODE -ne 0) { throw 'The pinned SenseVoice language-score patch does not apply; preserve the source checkout and inspect its changes.' }
+    git -C $source apply $languagePatch
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot apply the SenseVoice language-score patch' }
+}
+Copy-Item -LiteralPath $languageHeader -Destination (Join-Path $source 'sherpa-onnx/csrc/rc-sensevoice-language-scores.h') -Force
+$hintPatchId = 'rc-sensevoice-language-hint-v2'
+$hintPatch = Join-Path $PSScriptRoot 'native/sensevoice-language-hint-v2.patch'
+git -C $source apply --reverse --check $hintPatch 2>$null
+if ($LASTEXITCODE -ne 0) {
+    git -C $source apply --check $hintPatch
+    if ($LASTEXITCODE -ne 0) { throw 'The pinned SenseVoice language-hint patch does not apply; preserve local source changes.' }
+    git -C $source apply $hintPatch
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot apply the SenseVoice language-hint patch' }
+}
 $build = Join-Path $tools 'sherpa-android-no-tts'
 $flags = @(
     '-DCMAKE_BUILD_TYPE=Release', '-DBUILD_SHARED_LIBS=ON',
@@ -56,6 +80,11 @@ $dependencies = [ordered]@{
 }
 $licenseRoot = Join-Path $tools 'native/assets/licenses/sherpa-dependencies'
 New-Item -ItemType Directory -Force -Path $licenseRoot | Out-Null
+$localSource = Join-Path $licenseRoot 'rc-local-patches'
+New-Item -ItemType Directory -Force -Path $localSource | Out-Null
+Copy-Item -LiteralPath $languagePatch -Destination (Join-Path $localSource 'sensevoice-language-scores-v1.patch.txt') -Force
+Copy-Item -LiteralPath $languageHeader -Destination (Join-Path $localSource 'rc-sensevoice-language-scores.h.txt') -Force
+Copy-Item -LiteralPath $hintPatch -Destination (Join-Path $localSource 'sensevoice-language-hint-v2.patch.txt') -Force
 foreach ($name in $dependencies.Keys) {
     $directory = Join-Path $build "_deps/$name-src"
     $texts = @(Get-ChildItem -LiteralPath $directory -File | Where-Object Name -Match '^(LICENSE|NOTICE|COPYING|COPYRIGHT|AUTHORS)([._-].*)?$')
@@ -85,9 +114,11 @@ $metadata = [ordered]@{
     tts = $false
     offlineDiarization = $false
     speakerEmbedding = $true
+    localPatches = @($languagePatchId, $hintPatchId)
+    localPatchSources = @('rc-local-patches/sensevoice-language-scores-v1.patch.txt', 'rc-local-patches/rc-sensevoice-language-scores.h.txt', 'rc-local-patches/sensevoice-language-hint-v2.patch.txt')
     dependencies = $dependencies
     onnxruntime = 'https://github.com/csukuangfj/onnxruntime-libs/releases/download/v1.28.2/onnxruntime-android-1.28.2.zip'
-    notes = 'No model weights. Full license texts and collected public-source copyright notices are adjacent. Not every upstream source file is linked. Eigen source is unchanged; sherpa applies its pinned Android sentencepiece patch through CMake. MPL-covered source remains available from the listed upstream sources.'
+    notes = 'No model weights. Full license texts and collected public-source copyright notices are adjacent. Not every upstream source file is linked. The read-only language-score adapter and optional per-stream second-pass language-input patch are included under rc-local-patches. Automatic first-pass input is unchanged. Eigen source is unchanged; sherpa applies its pinned Android sentencepiece patch through CMake. MPL-covered source remains available from the listed upstream sources.'
 }
 $hostTag = if ($IsWindows) { 'windows-x86_64' } elseif ($IsMacOS) { 'darwin-x86_64' } else { 'linux-x86_64' }
 $strip = Join-Path $ndk "toolchains/llvm/prebuilt/$hostTag/bin/llvm-strip$suffix"

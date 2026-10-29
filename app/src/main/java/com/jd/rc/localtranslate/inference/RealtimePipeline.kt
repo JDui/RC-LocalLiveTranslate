@@ -62,14 +62,18 @@ class ConversationStore {
 }
 
 internal data class TranslationWork(val id: String, val revision: Int, val text: String,
-    val language: SourceLanguage, val target: SourceLanguage, val queuedAtNanos: Long)
+    val language: SourceLanguage, val target: SourceLanguage, val queuedAtNanos: Long,
+    val ticket: java.util.concurrent.atomic.AtomicInteger? = null) {
+    fun current(): Boolean = ticket?.get()?.let { it == revision } ?: true
+}
 
 internal data class SpeechWork(val id: String, val start: Long, val end: Long, val samples: FloatArray,
-    val revision: Int, val final: Boolean, val queuedAtNanos: Long = 0)
+    val revision: Int, val final: Boolean, val queuedAtNanos: Long = 0, val speakerEpoch: Long = 0)
 
 private sealed interface PipelineInput {
     data class Frame(val value: AudioFrame) : PipelineInput
     data class Boundary(val done: CompletableDeferred<Unit>) : PipelineInput
+    data class Sentence(val value: SentenceBoundary) : PipelineInput
 }
 
 /** Fixed memory ring for speculative ASR, never written to disk. */
@@ -110,7 +114,12 @@ class RealtimePipeline(private val sessionId: String, private val engines: Speec
     private val translations = Channel<TranslationWork>(8)
     private val speakerPolicy = Channel<Unit>(Channel.CONFLATED)
     private val translationPolicy = Channel<Unit>(Channel.CONFLATED)
+    private val languageReviews = Channel<Unit>(Channel.CONFLATED)
+    private val speakerDone = CompletableDeferred<Unit>()
+    private val sentenceBoundaries = Channel<SentenceBoundary>(Channel.CONFLATED)
     private val tracker = SpeakerTracker()
+    private val languageMemory = SpeakerLanguageMemory()
+    private val speakerPreviewEpoch = java.util.concurrent.atomic.AtomicLong()
     private val finalized = java.util.concurrent.ConcurrentHashMap<String, Int>()
     private val workers: List<Job>
     private val frontend: Job
@@ -122,6 +131,7 @@ class RealtimePipeline(private val sessionId: String, private val engines: Speec
             var requestedStop = false
             runtime.map { it.policy }.distinctUntilChanged().collect {
                 store.performance(it.status)
+                if (!it.speakerEnabled) speakerPreviewEpoch.incrementAndGet()
                 speakerPolicy.trySend(Unit); translationPolicy.trySend(Unit)
                 if (it.stop && !requestedStop) {
                     requestedStop = true
@@ -132,42 +142,86 @@ class RealtimePipeline(private val sessionId: String, private val engines: Speec
         }
         val speakerWorker = scope.launch { guarded("声纹推理失败，暂用未知说话人。") {
             var ended = false
-            val assigned = linkedSetOf<String>()
+            val previewed = linkedSetOf<String>()
+            var previewEpoch = speakerPreviewEpoch.get()
+            suspend fun withdrawStalePreviews() {
+                val epoch = speakerPreviewEpoch.get()
+                if (epoch == previewEpoch) return
+                tracker.withdrawPreviews().forEach {
+                    store.publish(SubtitleEvent.Speaker(sessionId, it.segmentId, it.revision, null))
+                }
+                previewed.clear()
+                previewEpoch = epoch
+            }
             try {
                 while (!ended) {
                     ensureProcessing()
+                    withdrawStalePreviews()
                     val work = select<SpeechWork?> {
                         speakerPolicy.onReceive { null }
                         speakerQueue.onReceiveCatching { if (it.isClosed) { ended = true; null } else it.getOrNull() }
                     }
                     if (work != null) speakerStats.dequeued()
+                    withdrawStalePreviews()
                     if (!runtime.value.policy.speakerEnabled) {
                         engines.releaseSpeaker()
-                        if (work != null) store.skippedSpeaker()
+                        if (work != null) {
+                            store.skippedSpeaker()
+                            if (work.final) tracker.observe(work.id, floatArrayOf(), work.samples.size / 16_000f).forEach {
+                                languageMemory.speaker(it.segmentId, it.speakerId)
+                                store.publish(SubtitleEvent.Speaker(sessionId, it.segmentId, it.revision, it.speakerId))
+                            }
+                        }
                         continue
                     }
                     if (work == null) continue
-                    if (work.id in assigned || work.samples.size < SpeakerTracker.MINIMUM_SAMPLES) continue
+                    if (!work.final && work.speakerEpoch != speakerPreviewEpoch.get()) continue
+                    if (!work.final && (work.id in previewed || work.samples.size < SpeakerTracker.MINIMUM_SAMPLES)) continue
                     ensureProcessing()
-                    val vector = diagnostics.measure(InferenceStage.SPEAKER, work.samples.size, work.queuedAtNanos) { engines.embedding(work.samples) } ?: continue
+                    val vector = if (work.samples.size >= SpeakerTracker.MINIMUM_SAMPLES)
+                        diagnostics.measure(InferenceStage.SPEAKER, work.samples.size, work.queuedAtNanos) { engines.embedding(work.samples) } else null
+                    if (!work.final && vector == null) continue
                     ensureProcessing()
+                    withdrawStalePreviews()
+                    if (!work.final && work.speakerEpoch != speakerPreviewEpoch.get()) continue
                     val assignments = diagnostics.measure(InferenceStage.SPEAKER_TRACKING, work.samples.size) {
-                        tracker.observe(work.id, vector, work.samples.size / 16_000f)
+                        if (work.final) tracker.observe(work.id, vector ?: floatArrayOf(), work.samples.size / 16_000f)
+                        else tracker.preview(work.id, requireNotNull(vector), work.samples.size / 16_000f)
                     }
                     ensureProcessing()
-                    tracker.drainMerges().forEach { store.publishMerge(sessionId, it) }
+                    tracker.drainMerges().forEach {
+                        languageMemory.merge(it.fromId, it.intoId)
+                        languageReviews.trySend(Unit)
+                        store.publishMerge(sessionId, it)
+                    }
                     assignments.forEach {
+                        if (work.final || it.segmentId != work.id) {
+                            languageMemory.speaker(it.segmentId, it.speakerId)
+                            languageReviews.trySend(Unit)
+                        }
                         store.publish(SubtitleEvent.Speaker(sessionId, it.segmentId, it.revision, it.speakerId))
                     }
-                    if (assignments.any { it.segmentId == work.id }) {
-                        assigned += work.id
-                        while (assigned.size > 256) assigned.remove(assigned.first())
+                    if (work.final) previewed.remove(work.id)
+                    else if (assignments.any { it.segmentId == work.id && it.speakerId != null }) {
+                        previewed += work.id
+                        while (previewed.size > 256) previewed.remove(previewed.first())
                     }
                 }
-            } finally { tracker.clear(); speakerQueue.close(); engines.releaseSpeaker() }
+            } finally {
+                try {
+                    withContext(NonCancellable) {
+                        tracker.withdrawPreviews().forEach {
+                            store.publish(SubtitleEvent.Speaker(sessionId, it.segmentId, it.revision, null))
+                        }
+                    }
+                } finally {
+                    try { tracker.clear(); speakerQueue.close(); engines.releaseSpeaker() }
+                    finally { speakerDone.complete(Unit); languageReviews.trySend(Unit) }
+                }
+            }
         } }
         suspend fun unavailable(work: TranslationWork) = withContext(NonCancellable) {
-            store.publish(SubtitleEvent.Translation(sessionId, work.id, work.revision, "", TranslationStatus.UNAVAILABLE))
+            if (work.current()) store.publish(SubtitleEvent.Translation(sessionId, work.id, work.revision, "", TranslationStatus.UNAVAILABLE))
         }
         val translationWorker = scope.launch { guarded("本地翻译失败，原文仍可用。") {
             var ended = false
@@ -179,6 +233,7 @@ class RealtimePipeline(private val sessionId: String, private val engines: Speec
                         translations.onReceiveCatching { if (it.isClosed) { ended = true; null } else it.getOrNull() }
                     }
                     if (pending != null) translationStats.dequeued()
+                    if (pending != null && !pending.current()) continue
                     val policy = runtime.value.policy
                     if (!policy.translationEnabled) {
                         engines.releaseTranslation()
@@ -198,6 +253,7 @@ class RealtimePipeline(private val sessionId: String, private val engines: Speec
                         },
                             queuedAtNanos = work.queuedAtNanos) { engines.translate(work.text, work.language, work.target) }
                         ensureProcessing()
+                        if (!work.current()) continue
                         store.publish(SubtitleEvent.Translation(sessionId, work.id, work.revision, text.orEmpty(),
                             if (text.isNullOrBlank()) TranslationStatus.UNAVAILABLE else TranslationStatus.COMPLETE))
                         if (text == null) store.warn("缺少对应翻译模型，当前显示原文。")
@@ -217,14 +273,78 @@ class RealtimePipeline(private val sessionId: String, private val engines: Speec
         } }
         val asrWorker = scope.launch { guarded("语音识别失败，请检查模型。", fatal = true) {
             var finalsClosed = false; var partialsClosed = false
+            val records = linkedMapOf<String, FinalTranscriptRecord>()
+            val pendingReviews = linkedSetOf<String>()
+            val sentences = SentenceBoundaryDetector()
+            suspend fun publish(record: FinalTranscriptRecord, stage: CaptionStage) {
+                val speech = record.selected
+                store.publish(SubtitleEvent.Transcript(sessionId, record.id, record.revision, record.start, record.end,
+                    speech.language, speech.text, stage))
+                val target = translationMode.target(speech.language) ?: return
+                val work = TranslationWork(record.id, record.revision, speech.text, speech.language, target,
+                    diagnostics.nowNanos(), record.ticket)
+                if (translations.trySend(work).isSuccess) translationStats.accepted()
+                else {
+                    translationStats.rejected(); unavailable(work)
+                    store.warn("翻译队列积压，部分语段仅显示原文。")
+                }
+            }
+            suspend fun review(id: String) {
+                val record = records[id] ?: return
+                val candidate = languageMemory.candidate(id) ?: record.automatic.language
+                var selected = record.automatic
+                if (candidate != record.automatic.language) {
+                    if (candidate !in record.hypotheses && record.hypotheses.size < 2 &&
+                        record.audio != null && runtime.value.policy.speakerEnabled) {
+                        val hypothesis = try {
+                            diagnostics.measure(InferenceStage.ASR_REVIEW, record.audio!!.size) {
+                                engines.recognizePreferred(record.audio!!, candidate)
+                            }
+                        } catch (cancelled: CancellationException) { throw cancelled }
+                        catch (_: Exception) { null }
+                        ensureProcessing()
+                        record.hypotheses[candidate] = hypothesis?.copy(tokens = emptyList())
+                    }
+                    val hypothesis = record.hypotheses[candidate]
+                    if (LanguageReviewPolicy.accept(record.automatic, candidate, hypothesis))
+                        selected = record.automatic.copy(language = candidate)
+                }
+                // Speaker identity can change while a synchronous second decode is in flight.
+                if ((languageMemory.candidate(id) ?: record.automatic.language) != candidate) {
+                    pendingReviews += id; return
+                }
+                if (selected.language == record.selected.language && selected.text == record.selected.text) return
+                record.selected = selected
+                check(record.revision < Int.MAX_VALUE)
+                record.revision++
+                record.ticket.set(record.revision)
+                publish(record, CaptionStage.REVISED)
+            }
             try {
-                while (!finalsClosed || !partialsClosed) {
-                    // Buffered channel reads need not suspend, so cancellation is checked explicitly.
+                while (true) {
                     ensureProcessing()
-                    val work = select<SpeechWork?> {
-                        if (!finalsClosed) finals.onReceiveCatching { result -> if (result.isClosed) { finalsClosed = true; null } else result.getOrNull() }
-                        if (!partialsClosed) partials.onReceiveCatching { result -> if (result.isClosed) { partialsClosed = true; null } else result.getOrNull() }
-                    } ?: continue
+                    // Final speech always has priority over optional review and speculative recognition.
+                    var work: SpeechWork? = null
+                    if (!finalsClosed) {
+                        val next = finals.tryReceive()
+                        work = next.getOrNull()
+                        if (next.isClosed) finalsClosed = true
+                    }
+                    if (work == null && pendingReviews.isNotEmpty()) {
+                        val id = pendingReviews.first(); pendingReviews.remove(id); review(id); continue
+                    }
+                    if (work == null) {
+                        if (finalsClosed && partialsClosed && speakerDone.isCompleted) {
+                            if (languageReviews.tryReceive().isSuccess) { pendingReviews += records.keys; continue }
+                            break
+                        }
+                        work = select<SpeechWork?> {
+                            if (!finalsClosed) finals.onReceiveCatching { result -> if (result.isClosed) { finalsClosed = true; null } else result.getOrNull() }
+                            languageReviews.onReceive { pendingReviews += records.keys; null }
+                            if (!speakerDone.isCompleted) speakerDone.onAwait { pendingReviews += records.keys; null }
+                            if (!partialsClosed) partials.onReceiveCatching { result -> if (result.isClosed) { partialsClosed = true; null } else result.getOrNull() }
+                        } ?: continue
+                    }
                     (if (work.final) finalStats else partialStats).dequeued()
                     if (!work.final && runtime.value.policy.partialIntervalSamples == 0L) continue
                     if (!work.final && (finalized.containsKey(work.id) || store.hasFinal(work.id))) continue
@@ -235,23 +355,27 @@ class RealtimePipeline(private val sessionId: String, private val engines: Speec
                     ensureProcessing()
                     store.latency((System.nanoTime() - started) / 1_000_000)
                     if (recognized.text.isNotBlank()) {
-                        store.publish(SubtitleEvent.Transcript(sessionId, work.id, work.revision, work.start, work.end,
-                            recognized.language, recognized.text, if (work.final) CaptionStage.FINAL else CaptionStage.PARTIAL))
                         if (work.final) {
+                            languageMemory.language(work.id, work.start, work.samples.size, recognized.language, recognized.languageScores)
+                            val record = FinalTranscriptRecord(work, recognized)
+                            records[work.id] = record
+                            while (records.size > 256) { val first = records.keys.first(); records.remove(first); pendingReviews.remove(first) }
+                            records.values.toList().dropLast(8).forEach { it.audio = null }
+                            // The first result follows auto immediately. Late acoustic evidence can safely revise it.
+                            publish(record, CaptionStage.FINAL)
                             diagnostics.finalPublished(work.queuedAtNanos)
-                            val downstream = work.copy(queuedAtNanos = diagnostics.nowNanos())
-                            if (translationMode.target(recognized.language) != null &&
-                                !translations.trySend(TranslationWork(work.id, work.revision, recognized.text, recognized.language,
-                                    requireNotNull(translationMode.target(recognized.language)), downstream.queuedAtNanos)).isSuccess) {
-                                translationStats.rejected()
-                                store.publish(SubtitleEvent.Translation(sessionId, work.id, work.revision, "", TranslationStatus.UNAVAILABLE))
-                                store.warn("翻译队列积压，部分语段仅显示原文。")
-                            } else if (translationMode.target(recognized.language) != null) translationStats.accepted()
+                            pendingReviews += records.keys
+                        } else if (!finalized.containsKey(work.id) && !store.hasFinal(work.id)) {
+                            store.publish(SubtitleEvent.Transcript(sessionId, work.id, work.revision, work.start, work.end,
+                                recognized.language, recognized.text, CaptionStage.PARTIAL))
+                            sentences.observe(work.id, work.start, work.end, recognized)?.let {
+                                sentenceBoundaries.trySend(SentenceBoundary(work.id, it))
+                            }
                         }
                     }
                     if (work.final) finalized.remove(work.id)
                 }
-            } finally { translations.close() }
+            } finally { records.clear(); languageReviews.close(); translations.close() }
         } }
         workers = listOf(asrWorker, speakerWorker, translationWorker)
         frontend = scope.launch { guarded("语音检测失败，请检查模型。", fatal = true) { segmentAudio() } }
@@ -279,8 +403,8 @@ class RealtimePipeline(private val sessionId: String, private val engines: Speec
             withContext(NonCancellable) {
                 job.cancelAndJoin()
                 // JNI calls finish before resources or immutable model files are released.
-                diagnostics.measureSuspending(InferenceStage.MODEL_RELEASE) { engines.close() }
-                diagnostics.end()
+                try { diagnostics.measureSuspending(InferenceStage.MODEL_RELEASE) { engines.close() } }
+                finally { languageMemory.clear(); diagnostics.end() }
             }
         }
     }
@@ -303,14 +427,30 @@ class RealtimePipeline(private val sessionId: String, private val engines: Speec
         var lastSpeaker = 0L; var speakerStart = 0L; var speakerAttempted = false
         var serial = 0L
         fun nextId() = "speech-${serial++}"
-        fun offerSpeaker(work: SpeechWork) {
-            if (!runtime.value.policy.speakerEnabled) { if (work.final) store.skippedSpeaker(); return }
-            if (work.samples.size < SpeakerTracker.MINIMUM_SAMPLES) return
-            if (speakerQueue.trySend(work).isSuccess) speakerStats.accepted()
-            else { speakerStats.rejected(); if (work.final) store.warn("声纹队列积压，部分语段暂未分配说话人。") }
+        fun invalidateSpeakerPreviews() {
+            speakerPreviewEpoch.incrementAndGet()
+            speakerPolicy.trySend(Unit)
         }
-        fun finalizeSegments() {
-            for (segment in engines.takeSegments()) {
+        fun offerSpeaker(work: SpeechWork) {
+            if (!runtime.value.policy.speakerEnabled) {
+                if (work.final) { store.skippedSpeaker(); invalidateSpeakerPreviews() }
+                return
+            }
+            if (work.samples.size < SpeakerTracker.MINIMUM_SAMPLES) {
+                if (work.final) invalidateSpeakerPreviews()
+                return
+            }
+            if (speakerQueue.trySend(work.copy(speakerEpoch = speakerPreviewEpoch.get())).isSuccess) speakerStats.accepted()
+            else {
+                speakerStats.rejected()
+                if (work.final) {
+                    invalidateSpeakerPreviews()
+                    store.warn("声纹队列积压，部分语段暂未分配说话人。")
+                }
+            }
+        }
+        fun finalizeSegments(segments: List<DetectedSpeech> = engines.takeSegments()) {
+            for (segment in segments) {
                 val id = currentId ?: nextId()
                 val start = base + segment.start
                 val work = SpeechWork(id, start, start + segment.samples.size, segment.samples, ++revision, true, diagnostics.nowNanos())
@@ -326,12 +466,64 @@ class RealtimePipeline(private val sessionId: String, private val engines: Speec
             engines.flushVad(); finalizeSegments(); engines.resetVad()
             currentId = null; filled = 0; expected = -1L
         }
+        fun acceptWindow(samples: FloatArray) {
+            processed += samples.size
+            diagnostics.measure(InferenceStage.VAD, samples.size) { engines.acceptVad(samples) }; finalizeSegments()
+            if (currentId != null && processed - currentStart >= 160_000L) {
+                engines.flushVad(); finalizeSegments(); engines.resetVad(); base = processed
+                currentId = null; revision = 0
+            }
+            if (!engines.speechDetected()) return
+            if (currentId == null) {
+                currentId = nextId(); currentStart = maxOf(base, processed - 8_000); lastPartial = currentStart
+                speakerStart = processed - samples.size; lastSpeaker = speakerStart; speakerAttempted = false
+            }
+            if (processed - speakerStart >= SpeakerTracker.MINIMUM_SAMPLES &&
+                (!speakerAttempted || processed - lastSpeaker >= 16_000L)) {
+                val voice = ring.slice(maxOf(speakerStart, processed - 32_000), processed)
+                offerSpeaker(SpeechWork(currentId!!, processed - voice.size, processed, voice, 0, false, diagnostics.nowNanos()))
+                lastSpeaker = processed; speakerAttempted = true
+            }
+            val interval = runtime.value.policy.partialIntervalSamples
+            if (interval > 0 && processed - lastPartial >= interval) {
+                val speech = ring.slice(currentStart, processed)
+                if (speech.size >= 12_000) {
+                    if (partials.trySend(SpeechWork(currentId!!, currentStart, processed, speech, ++revision, false, diagnostics.nowNanos())).isSuccess) partialStats.accepted()
+                    else partialStats.rejected()
+                }
+                lastPartial = processed
+            }
+        }
+        fun sentenceBoundary(proposal: SentenceBoundary) {
+            if (proposal.segmentId != currentId || proposal.sample < base) return
+            // Replay starts on the native window grid. No tail samples are discarded or time-compressed.
+            val cut = base + (proposal.sample - base) / 512 * 512
+            if (cut - currentStart < 12_800 || processed - cut < 1_024) return
+            val tail = ring.slice(cut, processed)
+            if (tail.size.toLong() != processed - cut) return
+            engines.flushVad()
+            val segments = engines.takeSegments()
+            val speech = segments.singleOrNull()
+            val split = speech?.let { cut - (base + it.start) }
+            if (speech == null || split == null || split < 12_800 || split >= speech.samples.size) {
+                finalizeSegments(segments); engines.resetVad(); base = processed
+                currentId = null; revision = 0; return
+            }
+            finalizeSegments(listOf(DetectedSpeech(speech.start, speech.samples.copyOf(split.toInt()))))
+            engines.resetVad(); base = cut; processed = cut
+            for (offset in tail.indices step 512) acceptWindow(tail.copyOfRange(offset, offset + 512))
+        }
         try {
-            for (message in input) {
-                inputStats.dequeued()
+            while (true) {
+                val message = select<PipelineInput?> {
+                    sentenceBoundaries.onReceiveCatching { it.getOrNull()?.let(PipelineInput::Sentence) }
+                    input.onReceiveCatching { it.getOrNull() }
+                } ?: break
+                if (message !is PipelineInput.Sentence) inputStats.dequeued()
                 ensureProcessing()
                 when (message) {
                 is PipelineInput.Boundary -> { boundary(); message.done.complete(Unit) }
+                is PipelineInput.Sentence -> sentenceBoundary(message.value)
                 is PipelineInput.Frame -> {
                     val frame = message.value
                     require(frame.sampleRate == 16_000)
@@ -345,30 +537,7 @@ class RealtimePipeline(private val sessionId: String, private val engines: Speec
                     for (sample in floats) {
                         window[filled++] = sample
                         if (filled != window.size) continue
-                        filled = 0; processed += window.size
-                        diagnostics.measure(InferenceStage.VAD, window.size) { engines.acceptVad(window.copyOf()) }; finalizeSegments()
-                        if (engines.speechDetected()) {
-                            if (currentId == null) {
-                                currentId = nextId(); currentStart = maxOf(base, processed - 8_000); lastPartial = currentStart
-                                speakerStart = processed - window.size; lastSpeaker = speakerStart; speakerAttempted = false
-                            }
-                            // Independent of ASR and sentence completion. Retry ambiguous/unready evidence at most once a second.
-                            if (processed - speakerStart >= SpeakerTracker.MINIMUM_SAMPLES &&
-                                (!speakerAttempted || processed - lastSpeaker >= 16_000L)) {
-                                val samples = ring.slice(maxOf(speakerStart, processed - 32_000), processed)
-                                offerSpeaker(SpeechWork(currentId!!, processed - samples.size, processed, samples, 0, false, diagnostics.nowNanos()))
-                                lastSpeaker = processed; speakerAttempted = true
-                            }
-                            val interval = runtime.value.policy.partialIntervalSamples
-                            if (interval > 0 && processed - lastPartial >= interval) {
-                                val samples = ring.slice(currentStart, processed)
-                                if (samples.size >= 12_000) {
-                                    if (partials.trySend(SpeechWork(currentId!!, currentStart, processed, samples, ++revision, false, diagnostics.nowNanos())).isSuccess) partialStats.accepted()
-                                    else partialStats.rejected()
-                                }
-                                lastPartial = processed
-                            }
-                        }
+                        filled = 0; acceptWindow(window.copyOf())
                     }
                 }
             }
@@ -376,6 +545,6 @@ class RealtimePipeline(private val sessionId: String, private val engines: Speec
             ensureProcessing()
             if (filled > 0) { engines.acceptVad(window.copyOf(filled)); filled = 0 }
             engines.flushVad(); finalizeSegments()
-        } finally { input.close(); finals.close(); partials.close(); speakerQueue.close() }
+        } finally { input.close(); sentenceBoundaries.close(); finals.close(); partials.close(); speakerQueue.close() }
     }
 }

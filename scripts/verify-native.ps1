@@ -14,6 +14,16 @@ try {
         $sourceInfo.tts -ne $false -or $sourceInfo.offlineDiarization -ne $false -or $sourceInfo.speakerEmbedding -ne $true) {
         throw 'Unexpected native preparation metadata'
     }
+    if (@($sourceInfo.localPatches) -notcontains 'rc-sensevoice-language-scores-v1' -or
+        @($sourceInfo.localPatches) -notcontains 'rc-sensevoice-language-hint-v2') {
+        throw 'APK is missing the required SenseVoice language-score adapter metadata'
+    }
+    foreach ($path in @('rc-local-patches/sensevoice-language-scores-v1.patch.txt', 'rc-local-patches/rc-sensevoice-language-scores.h.txt', 'rc-local-patches/sensevoice-language-hint-v2.patch.txt')) {
+        $entry = $zip.GetEntry("assets/licenses/sherpa-dependencies/$path")
+        if (@($sourceInfo.localPatchSources) -notcontains $path -or !$entry -or $entry.Length -eq 0) {
+            throw "APK is missing declared SenseVoice adapter source: $path"
+        }
+    }
     foreach ($path in @('eigen/COPYING.MPL2.txt', 'kissfft/BSD-3-Clause.txt', 'NDK-r29-NOTICE.toolchain.txt')) {
         if (!$zip.GetEntry("assets/licenses/sherpa-dependencies/$path")) { throw "Missing native license: $path" }
     }

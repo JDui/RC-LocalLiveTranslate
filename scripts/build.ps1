@@ -21,6 +21,20 @@ try {
         $nativeSource.tts -ne $false -or $nativeSource.offlineDiarization -ne $false -or $nativeSource.speakerEmbedding -ne $true) {
         throw 'Unexpected native SDK metadata; preserve it and rerun bootstrap-native.ps1 with the pinned toolchain'
     }
+    $languagePatchSources = @('native/assets/licenses/sherpa-dependencies/rc-local-patches/sensevoice-language-scores-v1.patch.txt',
+        'native/assets/licenses/sherpa-dependencies/rc-local-patches/rc-sensevoice-language-scores.h.txt',
+        'native/assets/licenses/sherpa-dependencies/rc-local-patches/sensevoice-language-hint-v2.patch.txt')
+    if (@($nativeSource.localPatches) -notcontains 'rc-sensevoice-language-scores-v1' -or
+        @($nativeSource.localPatches) -notcontains 'rc-sensevoice-language-hint-v2' -or
+        ($languagePatchSources | Where-Object { !(Test-Path -LiteralPath (Join-Path $toolsRoot $_)) })) {
+        & (Join-Path $PSScriptRoot 'build-sherpa-android.ps1')
+        $nativeSource = Get-Content -LiteralPath (Join-Path $toolsRoot 'native/assets/licenses/sherpa-dependencies/SOURCE.txt') -Raw | ConvertFrom-Json
+        if (@($nativeSource.localPatches) -notcontains 'rc-sensevoice-language-scores-v1' -or
+            @($nativeSource.localPatches) -notcontains 'rc-sensevoice-language-hint-v2' -or
+            ($languagePatchSources | Where-Object { !(Test-Path -LiteralPath (Join-Path $toolsRoot $_)) })) {
+            throw 'Native SDK is missing the required SenseVoice language-score adapter or its source files'
+        }
+    }
     if (Test-Path (Join-Path $projectRoot 'gradlew.bat')) {
         & (Join-Path $projectRoot 'gradlew.bat') @Tasks --console=plain
     } else {

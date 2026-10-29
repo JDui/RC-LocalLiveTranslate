@@ -56,6 +56,32 @@ class RealtimePipelineTest {
         override suspend fun translate(text: String, language: SourceLanguage, target: SourceLanguage) = if (translationAvailable) "中文:$text" else null
         override suspend fun close() { assertFalse(closed.getAndSet(true)) }
     }
+    /** Deterministic pause endpoint for scheduling tests; it does not model Silero accuracy. */
+    private class PauseEngines : SpeechEngines by Engines() {
+        private val samples = mutableListOf<Float>()
+        private val ready = mutableListOf<DetectedSpeech>()
+        private var clock = 0
+        private var start = 0
+        private var silence = 0
+        override fun acceptVad(samples: FloatArray) {
+            val speech = samples.any { it != 0f }
+            if (speech || this.samples.isNotEmpty()) {
+                if (this.samples.isEmpty()) start = clock
+                this.samples.addAll(samples.toList())
+                silence = if (speech) 0 else silence + samples.size
+                if (silence >= 4_480) emit(this.samples.size - silence)
+            }
+            clock += samples.size
+        }
+        override fun speechDetected() = samples.isNotEmpty()
+        override fun takeSegments() = ready.toList().also { ready.clear() }
+        override fun flushVad() { if (samples.isNotEmpty()) emit(samples.size) }
+        override fun resetVad() { samples.clear(); clock = 0; start = 0; silence = 0 }
+        private fun emit(size: Int) {
+            ready += DetectedSpeech(start, samples.take(size).toFloatArray())
+            samples.clear(); silence = 0
+        }
+    }
     private suspend fun feed(pipeline: RealtimePipeline, from: Long, frames: Int, value: Short = 3277): Long {
         var offset = from
         repeat(frames) {
@@ -133,6 +159,66 @@ class RealtimePipelineTest {
         assertEquals(1L, timings.getJSONObject("TRANSLATE_YUE").getLong("completed"))
     }
 
+    @Test fun confirmedSpeakerLanguageScoresBiasCloseCandidatesAndRouteClearSwitches() = runBlocking {
+        val backing = Engines()
+        val finalSpeakers = List(3) { java.util.concurrent.CountDownLatch(1) }
+        val speakerEvents = java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicInteger>()
+        val completedSpeakers = java.util.concurrent.atomic.AtomicInteger()
+        val calls = java.util.concurrent.CopyOnWriteArrayList<Triple<String, SourceLanguage, SourceLanguage>>()
+        val journal = object : ConversationJournal {
+            override suspend fun append(event: SubtitleEvent) {
+                if (event is SubtitleEvent.Speaker &&
+                    speakerEvents.getOrPut(event.segmentId) { java.util.concurrent.atomic.AtomicInteger() }.incrementAndGet() == 2) {
+                    // The second acoustic event is the full-sentence result, after its memory update.
+                    finalSpeakers[completedSpeakers.getAndIncrement()].countDown()
+                }
+            }
+            override suspend fun merge(merge: SpeakerMerge) = Unit
+        }
+        val engines = object : SpeechEngines by backing {
+            override fun embedding(samples: FloatArray) = floatArrayOf(1f, 0f)
+            override fun recognize(samples: FloatArray): RecognizedSpeech {
+                val index = when { samples.first() < .15f -> 0; samples.first() < .25f -> 1; else -> 2 }
+                if (samples.size == 20_480) assertTrue(finalSpeakers[index].await(5, java.util.concurrent.TimeUnit.SECONDS))
+                val automatic = if (index == 0) SourceLanguage.EN else SourceLanguage.JA
+                val other = if (index == 0) SourceLanguage.JA else SourceLanguage.EN
+                val gap = when (index) { 0 -> 3f; 1 -> .2f; else -> 2f }
+                val scores = SourceLanguage.supported.associateWith {
+                    when (it) { automatic -> 0f; other -> -gap; else -> -8f }
+                }
+                return RecognizedSpeech(listOf("Good morning.", "2026", "こんにちは。")[index], automatic, scores)
+            }
+            override fun recognizePreferred(samples: FloatArray, language: SourceLanguage) = RecognizedSpeech("2026", language)
+            override suspend fun translate(text: String, language: SourceLanguage, target: SourceLanguage): String {
+                calls += Triple(text, language, target)
+                return "${target.code}:$text"
+            }
+        }
+        val store = ConversationStore().apply { begin("session", TranslationMode.EN_JA, journal) }
+        val pipeline = RealtimePipeline("session", engines, store, this)
+        var offset = 0L
+        try {
+            listOf<Short>(3277, 6554, 9830).forEachIndexed { index, value ->
+                offset = feed(pipeline, offset, 40, value)
+                withTimeout(5000) {
+                    while (store.state.value.captions.getOrNull(index)?.let {
+                        it.translationStatus == TranslationStatus.COMPLETE &&
+                            (index != 1 || it.sourceLanguage == SourceLanguage.EN)
+                    } != true) delay(1)
+                }
+            }
+        } finally { finalSpeakers.forEach { it.countDown() }; pipeline.finish() }
+        val captions = store.state.value.captions
+        assertEquals(listOf(SourceLanguage.EN, SourceLanguage.EN, SourceLanguage.JA), captions.map { it.sourceLanguage })
+        assertEquals(listOf(SourceLanguage.JA, SourceLanguage.JA, SourceLanguage.EN), captions.map { it.targetLanguage })
+        assertEquals(listOf("Good morning.", "2026", "こんにちは。"), captions.map { it.sourceText })
+        assertTrue(captions.all { it.speakerId == "A" && it.stage != CaptionStage.PARTIAL })
+        assertEquals(Triple("Good morning.", SourceLanguage.EN, SourceLanguage.JA), calls.first())
+        assertEquals(Triple("2026", SourceLanguage.EN, SourceLanguage.JA), calls.last { it.first == "2026" })
+        assertEquals(Triple("こんにちは。", SourceLanguage.JA, SourceLanguage.EN), calls.last())
+        assertEquals(3, completedSpeakers.get())
+    }
+
     @Test fun speakerStartsOnFirstShortWindowBeforeSentenceOrAsrCompletes() = runBlocking {
         val backing = Engines()
         val embeddingCalls = java.util.concurrent.atomic.AtomicInteger()
@@ -159,10 +245,209 @@ class RealtimePipelineTest {
             withTimeout(5000) { while (asrStarted.count > 0) delay(1) }
             assertTrue(store.state.value.captions.isEmpty())
             allowAsr.countDown()
-            withTimeout(5000) { while (store.state.value.captions.firstOrNull()?.stage != CaptionStage.FINAL) delay(1) }
+            withTimeout(5000) {
+                while (store.state.value.captions.firstOrNull()?.let {
+                    it.stage == CaptionStage.FINAL && it.speakerRevision >= 1
+                } != true) delay(1)
+            }
             assertEquals("A", store.state.value.captions.single().speakerId)
-            assertEquals(1, embeddingCalls.get())
+            assertEquals(2, embeddingCalls.get())
         } finally { allowAsr.countDown(); pipeline.finish() }
+    }
+
+    @Test fun completeSentenceVoiceCanCorrectTheEarlyShortWindow() = runBlocking {
+        val backing = Engines()
+        val embeddingCalls = java.util.concurrent.atomic.AtomicInteger()
+        val engines = object : SpeechEngines by backing {
+            override fun embedding(samples: FloatArray): FloatArray {
+                embeddingCalls.incrementAndGet()
+                return if (samples.size < 20_480) floatArrayOf(1f, 0f) else floatArrayOf(0f, 1f)
+            }
+        }
+        val store = ConversationStore().apply { begin("session") }
+        val pipeline = RealtimePipeline("session", engines, store, this)
+        try {
+            val offset = feed(pipeline, 0, 26)
+            withTimeout(5000) { while (embeddingCalls.get() == 0) delay(1) }
+            feed(pipeline, offset, 14)
+            withTimeout(5000) {
+                while (store.state.value.captions.singleOrNull()?.let {
+                    it.stage == CaptionStage.FINAL && it.speakerId == "B"
+                } != true) delay(1)
+            }
+            val caption = store.state.value.captions.single()
+            assertTrue(caption.speakerRevision >= 1)
+            assertEquals(2, embeddingCalls.get())
+        } finally { pipeline.finish() }
+    }
+
+    @Test fun unavailableFinalEmbeddingWithdrawsTheEarlySpeaker() = runBlocking {
+        val backing = Engines()
+        val embeddingCalls = java.util.concurrent.atomic.AtomicInteger()
+        val engines = object : SpeechEngines by backing {
+            override fun embedding(samples: FloatArray): FloatArray? {
+                embeddingCalls.incrementAndGet()
+                return if (samples.size < 20_480) floatArrayOf(1f, 0f) else null
+            }
+        }
+        val store = ConversationStore().apply { begin("session") }
+        val pipeline = RealtimePipeline("session", engines, store, this)
+        try {
+            val offset = feed(pipeline, 0, 26)
+            withTimeout(5000) { while (embeddingCalls.get() == 0) delay(1) }
+            feed(pipeline, offset, 14)
+            withTimeout(5000) {
+                while (store.state.value.captions.singleOrNull()?.let {
+                    it.stage == CaptionStage.FINAL && it.speakerRevision >= 1
+                } != true) delay(1)
+            }
+            assertNull(store.state.value.captions.single().speakerId)
+            assertEquals(2, embeddingCalls.get())
+        } finally { pipeline.finish() }
+    }
+
+    @Test fun ambiguousFinalVoiceWithdrawsPreviewWithoutChangingEstablishedSpeakers() = runBlocking {
+        val backing = Engines()
+        val engines = object : SpeechEngines by backing {
+            override fun embedding(samples: FloatArray): FloatArray = when {
+                samples.first() < .15f -> floatArrayOf(1f, 0f)
+                samples.first() < .25f -> floatArrayOf(0f, 1f)
+                samples.size < 20_480 -> floatArrayOf(1f, 0f)
+                else -> floatArrayOf(1f, 1f)
+            }
+        }
+        val store = ConversationStore().apply { begin("session") }
+        val pipeline = RealtimePipeline("session", engines, store, this)
+        try {
+            var offset = feed(pipeline, 0, 40)
+            offset = feed(pipeline, offset, 40, 6554)
+            feed(pipeline, offset, 40, 9830)
+        } finally { pipeline.finish() }
+        val captions = store.state.value.captions
+        assertEquals(3, captions.size)
+        assertEquals(listOf("A", "B", null), captions.map { it.speakerId })
+        assertTrue(captions.last().speakerRevision > captions[1].speakerRevision)
+        assertTrue(captions.all { it.stage == CaptionStage.FINAL })
+    }
+
+    @Test fun finalTranscriptAndTranslationDoNotWaitForBlockedSpeakerInference() = runBlocking {
+        val backing = Engines()
+        val entered = java.util.concurrent.CountDownLatch(1)
+        val unblock = java.util.concurrent.CountDownLatch(1)
+        val returned = AtomicBoolean(false)
+        val engines = object : SpeechEngines by backing {
+            override fun embedding(samples: FloatArray): FloatArray? {
+                entered.countDown()
+                check(unblock.await(5, java.util.concurrent.TimeUnit.SECONDS))
+                returned.set(true)
+                return backing.embedding(samples)
+            }
+        }
+        val store = ConversationStore().apply { begin("session") }
+        val pipeline = RealtimePipeline("session", engines, store, this)
+        try {
+            feed(pipeline, 0, 40)
+            assertTrue(entered.await(5, java.util.concurrent.TimeUnit.SECONDS))
+            withTimeout(5000) {
+                while (store.state.value.captions.singleOrNull()?.let {
+                    it.stage == CaptionStage.FINAL && it.translationStatus == TranslationStatus.COMPLETE
+                } != true) delay(1)
+            }
+            assertFalse(returned.get())
+            assertNull(store.state.value.captions.single().speakerId)
+        } finally { unblock.countDown(); pipeline.finish() }
+        assertEquals("A", store.state.value.captions.single().speakerId)
+    }
+
+    @Test fun naturalPauseSendsFirstSentenceToTranslationWhileNextSentenceContinues() = runBlocking {
+        val engines = PauseEngines()
+        val store = ConversationStore().apply { begin("session") }
+        val pipeline = RealtimePipeline("session", engines, store, this)
+        var offset = 0L
+        try {
+            offset = feed(pipeline, offset, 32)
+            offset = feed(pipeline, offset, 9, 0)
+            offset = feed(pipeline, offset, 20, 6554)
+            withTimeout(5000) {
+                while (store.state.value.captions.firstOrNull()?.let {
+                    it.stage == CaptionStage.FINAL && it.translationStatus == TranslationStatus.COMPLETE
+                } != true) delay(1)
+            }
+            val first = store.state.value.captions.first()
+            assertEquals(0L, first.startSample)
+            assertEquals(32 * 512L, first.endSample)
+            assertTrue(store.state.value.captions.drop(1).none { it.stage == CaptionStage.FINAL })
+        } finally { pipeline.finish() }
+        val captions = store.state.value.captions
+        assertEquals(2, captions.size)
+        assertEquals(41 * 512L, captions[1].startSample)
+        assertEquals(offset, captions[1].endSample)
+        assertTrue(captions.all { it.stage == CaptionStage.FINAL && it.translationStatus == TranslationStatus.COMPLETE })
+    }
+
+    @Test fun uninterruptedSpeechUsesBoundedFallbackAndPreservesTheRemainingSampleClock() = runBlocking {
+        val engines = PauseEngines()
+        val store = ConversationStore().apply { begin("session") }
+        val diagnostics = RunDiagnostics(RunSource.HOST_SYNTHETIC)
+        val pipeline = RealtimePipeline("session", engines, store, this, diagnostics = diagnostics)
+        var offset = 0L
+        try {
+            offset = feed(pipeline, 0, 350)
+            withTimeout(5000) {
+                while (store.state.value.captions.firstOrNull()?.let {
+                    it.stage == CaptionStage.FINAL && it.translationStatus == TranslationStatus.COMPLETE
+                } != true) delay(1)
+            }
+            assertTrue(store.state.value.captions.first().endSample < offset)
+        } finally { pipeline.finish() }
+        val captions = store.state.value.captions
+        assertEquals(2, captions.size)
+        assertEquals(2, captions.map { it.segmentId }.distinct().size)
+        assertEquals(0L, captions.first().startSample)
+        assertTrue(captions.first().endSample in 160_000L..160_511L)
+        assertEquals(captions.first().endSample, captions.last().startSample)
+        assertEquals(offset, captions.last().endSample)
+        assertEquals(0L, store.state.value.droppedSegments)
+        assertTrue(captions.all { it.stage == CaptionStage.FINAL && it.translationStatus == TranslationStatus.COMPLETE })
+        assertEquals(2L, diagnostics.report().getLong("finalStatePublications"))
+    }
+
+    @Test fun stablePunctuationSplitsContinuousSpeechAndReplaysEverySampleOfTheFollowingSentence() = runBlocking {
+        val finals = java.util.concurrent.CopyOnWriteArrayList<FloatArray>()
+        val engines = object : SpeechEngines by PauseEngines() {
+            override fun recognize(samples: FloatArray): RecognizedSpeech {
+                if (samples.size == 17_920 || samples.size == 38_400) finals += samples.copyOf()
+                if (samples.first() >= .15f) return RecognizedSpeech("Next sentence continues.", SourceLanguage.EN)
+                if (samples.size < 20_000) return RecognizedSpeech("Hello world.", SourceLanguage.EN)
+                return RecognizedSpeech("Hello world. Next sentence", SourceLanguage.EN, tokens = listOf(
+                    RecognitionToken("Hello", .1f), RecognitionToken(" world", .5f), RecognitionToken(".", 1f),
+                    RecognitionToken(" Next", 1.2f), RecognitionToken(" sentence", 1.4f)))
+            }
+        }
+        val store = ConversationStore().apply { begin("session") }
+        val pipeline = RealtimePipeline("session", engines, store, this)
+        var offset = 0L
+        try {
+            offset = feed(pipeline, 0, 35)
+            offset = feed(pipeline, offset, 75, 6554)
+            withTimeout(5000) {
+                while (store.state.value.captions.firstOrNull()?.let {
+                    it.stage == CaptionStage.FINAL && it.translationStatus == TranslationStatus.COMPLETE
+                } != true) delay(1)
+            }
+            assertEquals("Hello world.", store.state.value.captions.first().sourceText)
+            assertTrue(store.state.value.captions.drop(1).none { it.stage == CaptionStage.FINAL })
+        } finally { pipeline.finish() }
+        val captions = store.state.value.captions
+        assertEquals(2, captions.size)
+        assertEquals(17_920L, captions.first().endSample)
+        assertEquals(captions.first().endSample, captions.last().startSample)
+        assertEquals(offset, captions.last().endSample)
+        assertEquals("Next sentence continues.", captions.last().sourceText)
+        assertEquals(2, finals.size)
+        assertEquals(offset.toInt(), finals.sumOf { it.size })
+        assertTrue(finals[0].all { it == 3277 / 32768f })
+        assertTrue(finals[1].all { it == 6554 / 32768f })
     }
 
     @Test fun finalAsrTranslationAndSpeakerBackfillReachStore() = runBlocking {
@@ -288,6 +573,112 @@ class RealtimePipelineTest {
         feed(pipeline, 0, 40); pipeline.finish()
         assertEquals(0, embeddingCalls.get())
         assertEquals(TranslationStatus.COMPLETE, store.state.value.captions.single().translationStatus)
+    }
+    @Test fun pressureAfterPreviewWithdrawsItWhenTheFinalSpeakerJobIsDisabled() = runBlocking {
+        val backing = Engines()
+        val embeddingCalls = java.util.concurrent.atomic.AtomicInteger()
+        val preview = java.util.concurrent.CountDownLatch(1)
+        val withdrawal = java.util.concurrent.CountDownLatch(1)
+        val engines = object : SpeechEngines by backing {
+            override fun embedding(samples: FloatArray): FloatArray {
+                embeddingCalls.incrementAndGet()
+                return floatArrayOf(1f, 0f)
+            }
+        }
+        val journal = object : ConversationJournal {
+            override suspend fun append(event: SubtitleEvent) {
+                if (event is SubtitleEvent.Speaker) {
+                    if (event.speakerId != null) preview.countDown() else withdrawal.countDown()
+                }
+            }
+            override suspend fun merge(merge: SpeakerMerge) = Unit
+        }
+        val runtime = MutableStateFlow(RuntimePerformance())
+        val store = ConversationStore().apply { begin("session", sink = journal) }
+        val pipeline = RealtimePipeline("session", engines, store, this, runtime)
+        try {
+            var offset = feed(pipeline, 0, 26)
+            assertTrue(preview.await(5, java.util.concurrent.TimeUnit.SECONDS))
+            runtime.value = PerformancePolicyController().evaluate(PressureSnapshot(thermalStatus = 2), PerformanceMode.AUTO, 0)
+            offset = feed(pipeline, offset, 14)
+            withTimeout(5000) {
+                while (withdrawal.count != 0L || store.state.value.captions.singleOrNull()?.let {
+                    it.stage == CaptionStage.FINAL && it.translationStatus == TranslationStatus.COMPLETE
+                } != true) delay(1)
+            }
+            assertNull(store.state.value.captions.single().speakerId)
+            assertEquals(1, embeddingCalls.get())
+            assertEquals(1L, store.state.value.skippedSpeakerSegments)
+            runtime.value = RuntimePerformance()
+            feed(pipeline, offset, 40)
+        } finally { pipeline.finish() }
+        val captions = store.state.value.captions
+        assertEquals(2, captions.size)
+        assertNull(captions.first().speakerId)
+        // A withdrawn preview did not consume a confirmed identity slot.
+        assertEquals("A", captions.last().speakerId)
+        assertTrue(captions.all { it.translationStatus == TranslationStatus.COMPLETE })
+        assertEquals(3, embeddingCalls.get())
+    }
+    @Test fun rejectedFinalSpeakerWorkWithdrawsPreviewAndSkipsStaleQueuedPreviews() = runBlocking {
+        val backing = Engines()
+        val embeddingCalls = java.util.concurrent.atomic.AtomicInteger()
+        val previewReady = java.util.concurrent.CountDownLatch(1)
+        val finalEntered = java.util.concurrent.CountDownLatch(1)
+        val unblockFinal = java.util.concurrent.CountDownLatch(1)
+        val withdrawal = CompletableDeferred<SubtitleEvent.Speaker>()
+        val events = java.util.concurrent.CopyOnWriteArrayList<SubtitleEvent.Speaker>()
+        val journal = object : ConversationJournal {
+            override suspend fun append(event: SubtitleEvent) {
+                if (event is SubtitleEvent.Speaker) {
+                    events += event
+                    if (event.speakerId != null) previewReady.countDown() else withdrawal.complete(event)
+                }
+            }
+            override suspend fun merge(merge: SpeakerMerge) = Unit
+        }
+        val engines = object : SpeechEngines by backing {
+            override fun embedding(samples: FloatArray): FloatArray {
+                if (embeddingCalls.incrementAndGet() == 2) {
+                    finalEntered.countDown()
+                    check(unblockFinal.await(5, java.util.concurrent.TimeUnit.SECONDS))
+                }
+                return floatArrayOf(1f, 0f)
+            }
+        }
+        val store = ConversationStore().apply { begin("session", sink = journal) }
+        val diagnostics = RunDiagnostics(RunSource.HOST_SYNTHETIC)
+        val pipeline = RealtimePipeline("session", engines, store, this, diagnostics = diagnostics)
+        try {
+            var offset = feed(pipeline, 0, 26)
+            assertTrue(previewReady.await(5, java.util.concurrent.TimeUnit.SECONDS))
+            val early = events.first()
+            assertEquals("A", early.speakerId)
+            offset = feed(pipeline, offset, 14)
+            assertTrue(finalEntered.await(5, java.util.concurrent.TimeUnit.SECONDS))
+            // Two later segments fill four slots; the third segment's final must be rejected.
+            repeat(3) { offset = feed(pipeline, offset, 40) }
+            withTimeout(5000) {
+                while (store.state.value.warning?.contains("声纹队列积压") != true) delay(1)
+            }
+            val fullQueue = diagnostics.report().getJSONObject("queues").getJSONObject("speaker")
+            assertEquals(4L, fullQueue.getLong("acceptedNotDequeued"))
+            assertTrue(fullQueue.getLong("rejected") > 0)
+            assertFalse(withdrawal.isCompleted)
+            unblockFinal.countDown()
+            val withdrawn = withTimeout(5000) { withdrawal.await() }
+            assertEquals(early.segmentId, withdrawn.segmentId)
+            assertTrue(withdrawn.revision > early.revision)
+            withTimeout(5000) {
+                while (store.state.value.captions.firstOrNull { it.segmentId == early.segmentId }?.let {
+                    it.stage == CaptionStage.FINAL && it.speakerId != null && it.speakerRevision > withdrawn.revision
+                } != true) delay(1)
+            }
+        } finally { unblockFinal.countDown(); pipeline.finish() }
+        assertEquals(4, store.state.value.captions.size)
+        // Only the first preview and three accepted finals run; two queued old previews are skipped.
+        assertEquals(4, embeddingCalls.get())
+        assertEquals(0L, diagnostics.report().getJSONObject("queues").getJSONObject("speaker").getLong("acceptedNotDequeued"))
     }
     @Test fun policyReleasesIdleSpeakerOnlyAfterSynchronousEmbeddingReturns() = runBlocking {
         val backing = Engines(); val entered = java.util.concurrent.CountDownLatch(1)

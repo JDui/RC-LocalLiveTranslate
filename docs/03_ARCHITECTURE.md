@@ -27,6 +27,8 @@ AudioRecord -> 16 kHz mono PCM RingBuffer -> Silero VAD -> SpeechSegments。
 
 快路径：ASR + auto LID -> 原文(Partial/Final) -> TranslationRouter -> 字幕。
 
+最终声纹晚到可唤醒有界语言复核：原始 auto 结果先发布和送译，近分候选再用同模型第二遍假设验证；通过文本 / 数字一致性检查才以更高 transcript revision 更新语言，保留原文。translation ticket 拒绝旧排队 / 在途结果；ASR worker 等声纹结束排空复核后关闭翻译队列。可选连续语音句末 proposal 由 ASR 发给前端，前端核对当前 segment 与音频切点后完整回放尾段；普通采集投递仍非阻塞。具体内存界限和无法保证完美分句的模型局限见 ADR-0009。
+
 慢路径：Speaker embedding -> OnlineSpeakerTracker -> Speaker ID -> SubtitleRevision。
 
 复核路径：最近若干秒重算 diarization / 换人点 -> 更精确的字幕时间与说话人归属（可关闭）。

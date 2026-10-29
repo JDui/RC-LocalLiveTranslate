@@ -181,3 +181,31 @@ README截图来自签名Release：1080×2520 / 480dpi竖屏（21:9、360×840dp�
 本轮启动 API 35 x86_64 Android 模拟器，以独立 `.hyvalidation` 包验证系统权限拒绝、语言菜单键盘操作、320 dp / 200% 字体及 IME 弹窗、SAF 导入四模型、模型详情 / 删除 / 重导入、演示记录与 TXT / SRT / JSON 实际保存、删除确认取消和两次独立左滑、手动城市保存及冷启动保留。截图和 XML 在 `.tools/ui-audit/after/`，导出内容为明确标记的演示字幕。原有主包因签名不兼容没有覆盖或卸载。模拟器显示参数已恢复为本轮开始时的 1080×2520 / 480 dpi / fontScale 1.0。
 
 验证边界：x86_64 模拟器无法加载生产 ARM64 原生库，实际拾音、暂停及由真实拾音产生的诊断导出未验收；模型下载实际进入失败状态，未验收真实传输取消；合成坐标城市查询进入失败回退，Geocoder 成功未验收；OEM 折叠 / 多窗口 / 真实 TalkBack 与真人模型质量仍缺物理设备证据。这些保留为适用但待验证，不能靠提高分数关闭。未提交或推送。
+
+## 2026-10-29 自然停顿分句、声纹句末复核与起始语言软偏好
+
+Silero 句末静音由 0.4 秒调至 0.28 秒，长句激进检测阈值延至 10 秒；前端另加有界连续语音冲刷和 VAD 时间基准重设。自然停顿产出的 final ASR 立即进入翻译，不等待声纹。0.8 秒声纹结果改为不训练模板的 preview，完整句末证据重新匹配并可纠正 / 撤回。anchor 支持和更严格的模板更新门槛抑制边缘证据拖移；最终复核丢弃、热降级及退出时撤回尚未确认的预览，旧 epoch 排队预览不再生效。
+
+固定 sherpa 1.13.8 增加只读语言 tag logits 适配，模型输入和文本继续 auto；已确认说话人的最早可靠语言只对接近候选提供软偏好，明显的新语言立即胜出。身份判定不使用语言。缺少有效分数或身份时保留自动结果，不延迟当前翻译。具体参数、限制与构建补丁见 [ADR-0009](adr/0009-sentence-endpoints-and-speaker-language-prior.md)。
+
+最终使用 `scripts/build.ps1 -Tasks @(':app:assembleDebug', ':app:testDebugUnitTest', ':app:lintDebug', ':app:assembleDebugAndroidTest', '--no-daemon', '--max-workers=2')`，BUILD SUCCESSFUL in 2m 42s，85 tasks / 27 executed；22 suites / 245 tests，0 failures / errors / skipped，JUnit XML 均为本轮新生成。包含 RealtimePipeline 31 项、SpeakerTracker 18 项、SpeakerLanguageMemory 9 项。覆盖提前误配的完整句末纠正、null / 歧义撤回、模板不被预览或边缘证据拖移、合并后原声复用、翻译不等待声纹、自然停顿先送译、连续语音 10 秒回退和时间轴、起始语言 / 明确切换的实际翻译方向、迟到与纠正身份、语言记忆合并及有界清理、热压力与满队列撤回和旧预览失效。
+
+Debug lint：0 errors / 16 warnings；保留 Gradle 版本弃用提示和既有 llama 源码所有权引起的 git 版本探测警告，未修改全局 Git 信任配置。最终 `scripts/verify-native.ps1` 的 5 个 ARM64 ELF、必需 JNI、无 TTS、固定 STQ 来源和 APK ZIP 16 KB 对齐全部 PASS；新增门禁确认 APK 实际包含语言适配声明及两个非空补丁 / helper 源码 assets。缺适配声明、缺 helper 两个负向 ZIP 用例均被拒绝。适配 helper 的 MSVC 合成分数测试、固定源补丁前向 / 已应用检查和 ARM64 JNI 增量编译通过。
+
+日志：`.tools/sentence-speaker-final-validation.log`、`.tools/sentence-speaker-final-native-check.log`、`.tools/sentence-language-sherpa-build.log`、`.tools/native-language-scores-host-test.log`。最终调试 APK：`app/build/outputs/apk/debug/app-debug.apk`，99,620,941 bytes。测试 APK 已编译，未执行 connected instrumentation；本轮未提交、推送或更新 Release，保留既有 `.gitignore` 修改。
+
+`adb devices -l` 无连接设备。本轮主机证据使用合成向量、分数和后端，不是实际 SenseVoice 分数分布、真人 CAM++ 跨语言准确率、精确语义分句或 Android 麦克风 / 翻译延迟验收。自然停顿可误切犹豫，无停顿多句仍可同段；重叠语音、相似声线、第一语言误判与实际阈值仍须真人设备测试。
+
+## 2026-10-29 Astra 独立审核后的修复与最终复核
+
+独立审核复现了三个问题：反复撤回 preview 耗尽正式身份额度、声纹晚到导致偏好始终不生效、直接改标签导致英文漏译 / 方向变化。已分别改为临时 reservation / 正式 committed ID 分离、最终声纹触发有界异步语言复核、真实第二遍语言假设加严格一致性检查。初次 auto 结果立即送译；复核只修订经验证的语言及路由，原文 / 标点保留，translation ticket 与 reducer revision 共同拒绝旧排队 / 在途译文。最近 256 段元数据、8 段 PCM、每段至多 2 个额外假设；可选复核不阻塞 AudioRecord，最终识别优先，停止时在声纹结束后排空复核。
+
+新增两次 partial 一致句末 token 的连续语音切分路径：验证原始 tokens / timestamps 与文本匹配，前端按实际切点切首句并完整回放尾音，不推算文字时间。独立复核追加发现数字符号被规范化丢弃、省略号分散 token 误切和数字句末被一律拒绝；这些也已修复。文本内容严格相同，数值表达保留正负号、小数、分组、比例、货币及百分号；禁止编辑距离容忍导致数字 / 否定词改变。分句器检查标点前后上下文，拒绝整串省略号、小数及域名内部点，允许数字后的真实句末。Native VAD 的不足 512 samples 残窗在 flush 前补齐，返回 PCM 裁掉补零。最终设计和限制见更新后的 ADR-0009。
+
+最终完整命令仍为 `scripts/build.ps1 -Tasks @(':app:assembleDebug', ':app:testDebugUnitTest', ':app:lintDebug', ':app:assembleDebugAndroidTest', '--no-daemon', '--max-workers=2')`。BUILD SUCCESSFUL in 2m 29s，85 tasks / 26 executed；25 suites / 262 tests，0 failures / errors / skipped。包括 RealtimePipeline 32、SpeakerTracker 19、SpeakerLanguageMemory 10、LanguageReviewPolicy 4、SentenceBoundaryDetector 7、LanguageReviewPipeline 3。覆盖两种完成顺序、反复撤回后的额度、英文 / 混合文本不漏译、真正换语言、晚到身份复核、错误预览改正后的旧译文失效、稳定标点切句与每个尾音样本 / 时间区间保留，以及追加的数值 / 否定 / 省略号 / 小数 / 数字句末 / 域名反例。
+
+Debug lint：0 errors / 16 warnings；已有 Gradle 版本弃用、llama git 版本探测的源码所有权提示保留，未改变全局 Git 信任设置。最终 APK 的 5 个 ARM64 ELF、必需 JNI、无 TTS、固定 STQ 来源、ZIP 16 KB 对齐和 v1 / v2 适配源码门禁全部 PASS。Native v2 ARM64 JNI 编译及再次准备的幂等检查通过；适配使用同一固定权重、无新增依赖。测试 APK 编译通过，未执行 connected instrumentation。
+
+最终日志为 `.tools/astra-fixes-final-validation.log` 和 `.tools/astra-fixes-final-native-check.log`；原生编译 / 重复准备日志 `.tools/astra-fixes-sherpa-build.log`、`.tools/astra-fixes-sherpa-final.log`。此前定向 72 项及上一轮完整构建也通过，最终结果以上述 262 项为准。Astra 在最新编译产物上重新复现并确认原三项及追加数字 / 分句反例均关闭，未发现新的确定性阻断问题，代码层面通过复核；它没有把真人效果判为达标。
+
+另实际读取 Windows x64 固定 SenseVoice 的三段既有本地 TTS 的文本、tokens 和 timestamps，观察文件 `.tools/astra-fixes-real-token-observations.json`。模型会漏掉句末标点，或把句号识别成逗号；这是模型能力边界，不能以合成 token 测试掩盖。此观察使用主机原生模型，不是 Android v2 运行或真人准确率证据。缺标点 / 无法对齐时仍退回自然停顿和 10 秒资源边界；真实切点是否截词、犹豫 / 连续多句误切率、CAM++ 同人跨语种稳定性及手机端延迟仍待人声 / ARM64 设备验收。`adb devices -l` 无设备。本轮未提交、推送、更新 Release 或改动既有 `.gitignore` 修改。

@@ -5,6 +5,7 @@
 | 依赖 | 已核实的上游声明 | 必须行动 |
 | --- | --- | --- |
 | sherpa-onnx 核心 | Apache-2.0 | 保留适用版权/NOTICE，核对原生依赖 |
+| 本地 SenseVoice 分数 / 第二遍语言假设适配 | 基于上述固定 sherpa 源码的局部修改，不增加依赖或权重 | SOURCE 标记 `rc-sensevoice-language-scores-v1` 和 `rc-sensevoice-language-hint-v2`，随原生许可目录保留两个补丁及 helper 源码；不改变上游权重许可 |
 | 无 TTS JNI 的原生传递组件 | Kaldi / OpenFST / simple-sentencepiece Apache-2.0、KissFFT BSD-3-Clause、nlohmann JSON MIT、Eigen 5.0.1 MPL-2.0 及其兼容第三方条款 | 全文、公开源码版权行和固定 SOURCE 已随包保留；Eigen 未修改，保留对应源码取得方式 |
 | AndroidX Media3 common 1.11.1 / Sonic | Apache-2.0 | 随包保留全文及 AOSP / Bill Cox 署名，发行前核查传递依赖 |
 | llama.cpp / ggml STQ runtime | MIT，固定 PR #22836 提交 | 保留全文与 SOURCE；不编译网络工具，实验 PR 状态见 ADR-0006 |
