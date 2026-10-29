@@ -19,8 +19,8 @@ android {
         applicationId = "com.jd.rc.localtranslate"
         minSdk = 28
         targetSdk = 36
-        versionCode = 303
-        versionName = "0.3.3"
+        versionCode = 305
+        versionName = "0.3.5"
         ndk { abiFilters += if (hyValidation) "x86_64" else "arm64-v8a" }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
